@@ -8,6 +8,7 @@ import {
   UserOutlined,
   DeleteOutlined,
   ClearOutlined,
+  CheckCircleOutlined,
   BankOutlined // <-- THÊM CÁI NÀY
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
@@ -36,6 +37,7 @@ const AdminLayout = () => {
     { key: '/admin/users', icon: <TeamOutlined />, label: 'Danh sách Nhân sự' },
     { key: '/admin/rooms', icon: <BankOutlined />, label: 'Quản lý phòng' },
     { key: '/admin/roles', icon: <SafetyCertificateOutlined />, label: 'Vai trò & Phân quyền' },
+    { key: '/admin/housekeeping', icon: <CheckCircleOutlined />, label: 'Dọn phòng' },
   ];
 
   // Hàm để lấy màu icon dựa trên type

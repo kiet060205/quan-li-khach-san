@@ -7,6 +7,7 @@ import RoomManagementPage from './pages/admin/RoomManagement/RoomManagementPage'
 import RoomCreatePage from './pages/admin/RoomManagement/RoomCreatePage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
+import HousekeepingPage from './pages/admin/Housekeeping/HousekeepingPage'; // Trỏ đúng đường dẫn file của bro nha
 import { useAuthStore } from './store/authStore';
 import { NotificationProvider } from './context/notificationContext';
 import 'antd/dist/reset.css'; 
@@ -41,6 +42,7 @@ function App() {
             <Route path="users" element={<UserManagementPage />} />
             <Route path="rooms" element={<RoomManagementPage />} />
             <Route path="rooms/create" element={<RoomCreatePage />} />
+            <Route path="housekeeping" element={<HousekeepingPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
