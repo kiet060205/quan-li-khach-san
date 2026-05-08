@@ -2,6 +2,7 @@ using HotelManagementApi.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace HotelManagementApi.Controllers
 {
@@ -30,7 +31,6 @@ namespace HotelManagementApi.Controllers
         {
             _context.Attractions.Add(attraction);
             await _context.SaveChangesAsync();
-
             return Ok(new { Message = "Thêm địa điểm thành công", Data = attraction });
         }
 

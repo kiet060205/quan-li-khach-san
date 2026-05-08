@@ -66,7 +66,10 @@ const ArticlesPage = () => {
     setLoading(true);
     try {
       const res = await articleApi.getAllArticles();
-      setArticles(res.data);
+      const raw = res.data;
+      // API trả về { value: [...] }
+      const data = raw?.value || raw?.data || (Array.isArray(raw) ? raw : []);
+      setArticles(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error(error);
       setArticles([

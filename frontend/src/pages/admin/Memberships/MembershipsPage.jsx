@@ -1,26 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Card, Typography, Button, Space, Modal, Form, Input, InputNumber, message, Tag, Avatar, Tooltip, Row, Col, Progress } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, CrownOutlined, TeamOutlined } from '@ant-design/icons';
+import {
+  Table, Card, Typography, Button, Space, Modal, Form, Input,
+  InputNumber, message, Tag, Avatar, Tooltip, Row, Col, Progress, Popconfirm, Select
+} from 'antd';
+import {
+  PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined,
+  CrownOutlined, TeamOutlined, TrophyOutlined, GiftOutlined
+} from '@ant-design/icons';
 import { membershipApi } from '../../../api/financeApi';
 import { useNotification } from '../../../context/notificationContext';
 
 const { Title, Text } = Typography;
+const { Option } = Select;
 
 const TIER_CONFIG = {
-  Bronze:   { color: '#cd7f32', bg: '#fdf3e6', emoji: '🥉', tag: 'bronze' },
-  Silver:   { color: '#a8a8a8', bg: '#f5f5f5', emoji: '🥈', tag: 'default' },
-  Gold:     { color: '#d4a017', bg: '#fffbe6', emoji: '🥇', tag: 'gold' },
-  Platinum: { color: '#40a9ff', bg: '#e6f7ff', emoji: '💎', tag: 'blue' },
-  Diamond:  { color: '#b37feb', bg: '#f9f0ff', emoji: '💠', tag: 'purple' },
+  'Khách Mới': { color: '#888', bg: '#f5f5f5', emoji: '👤', gradient: 'linear-gradient(135deg, #888, #aaa)' },
+  Bronze:      { color: '#cd7f32', bg: '#fdf3e6', emoji: '🥉', gradient: 'linear-gradient(135deg, #cd7f32, #e8a87c)' },
+  Đồng:        { color: '#cd7f32', bg: '#fdf3e6', emoji: '🥉', gradient: 'linear-gradient(135deg, #cd7f32, #e8a87c)' },
+  Silver:      { color: '#a8a8a8', bg: '#f5f5f5', emoji: '🥈', gradient: 'linear-gradient(135deg, #a8a8a8, #d0d0d0)' },
+  Bạc:         { color: '#a8a8a8', bg: '#f5f5f5', emoji: '🥈', gradient: 'linear-gradient(135deg, #a8a8a8, #d0d0d0)' },
+  Gold:        { color: '#d4a017', bg: '#fffbe6', emoji: '🥇', gradient: 'linear-gradient(135deg, #d4a017, #f0c040)' },
+  Vàng:        { color: '#d4a017', bg: '#fffbe6', emoji: '🥇', gradient: 'linear-gradient(135deg, #d4a017, #f0c040)' },
+  Platinum:    { color: '#40a9ff', bg: '#e6f7ff', emoji: '💎', gradient: 'linear-gradient(135deg, #40a9ff, #91d5ff)' },
+  'Bạch Kim':  { color: '#40a9ff', bg: '#e6f7ff', emoji: '💎', gradient: 'linear-gradient(135deg, #40a9ff, #91d5ff)' },
+  Diamond:     { color: '#b37feb', bg: '#f9f0ff', emoji: '💠', gradient: 'linear-gradient(135deg, #b37feb, #d3adf7)' },
 };
 
-const MOCK_MEMBERSHIPS = [
-  { id: 1, tierName: 'Bronze', minPoints: 0, discountPercent: 0, memberCount: 238, perks: 'Ưu tiên nhận phòng sớm' },
-  { id: 2, tierName: 'Silver', minPoints: 500, discountPercent: 5, memberCount: 124, perks: 'Giảm 5% + Free breakfast' },
-  { id: 3, tierName: 'Gold', minPoints: 2000, discountPercent: 10, memberCount: 57, perks: 'Giảm 10% + Late checkout' },
-  { id: 4, tierName: 'Platinum', minPoints: 5000, discountPercent: 15, memberCount: 22, perks: 'Giảm 15% + Room upgrade' },
-  { id: 5, tierName: 'Diamond', minPoints: 10000, discountPercent: 20, memberCount: 8, perks: 'Giảm 20% + Suite ưu tiên' },
-];
+const getConfig = (name) => TIER_CONFIG[name] || { color: '#1677ff', bg: '#e6f4ff', emoji: '⭐', gradient: 'linear-gradient(135deg, #1677ff, #69b1ff)' };
 
 const MembershipsPage = () => {
   const [memberships, setMemberships] = useState([]);
@@ -34,47 +40,50 @@ const MembershipsPage = () => {
     setLoading(true);
     try {
       const res = await membershipApi.getAllMemberships();
-      const data = res.data?.data || res.data || [];
-      setMemberships(Array.isArray(data) && data.length > 0 ? data : MOCK_MEMBERSHIPS);
-    } catch { setMemberships(MOCK_MEMBERSHIPS); }
-    finally { setLoading(false); }
+      const raw = res.data;
+      const data = raw?.value || raw?.data || (Array.isArray(raw) ? raw : []);
+      setMemberships(data);
+    } catch {
+      message.error('Không thể tải hạng thành viên!');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchMemberships(); }, []);
 
   const handleEdit = (record) => {
     setEditing(record);
-    form.setFieldsValue({ tierName: record.tierName, minPoints: record.minPoints, discountPercent: record.discountPercent, perks: record.perks });
+    form.setFieldsValue({
+      tierName: record.tierName,
+      minPoints: record.minPoints,
+      discountPercent: record.discountPercent,
+      perks: record.perks || '',
+    });
     setIsModalVisible(true);
   };
 
-  const handleDelete = (id) => {
-    Modal.confirm({
-      title: 'Xóa hạng thành viên này?', content: 'Các thành viên đang ở hạng này sẽ mất liên kết.',
-      okText: 'Xóa', okType: 'danger', cancelText: 'Hủy',
-      onOk: async () => {
-        try { await membershipApi.deleteMembership(id); } catch {}
-        setMemberships(prev => prev.filter(m => m.id !== id));
-        message.success('Đã xóa!');
-        addNotification('Xóa Hạng TV', `Đã xóa hạng thành viên #${id}`, 'warning');
-      }
-    });
+  const handleDelete = async (id, name) => {
+    try {
+      await membershipApi.deleteMembership(id);
+      message.success('Đã xóa hạng thành viên!');
+      addNotification('Xóa Hạng TV', `Đã xóa hạng: ${name}`, 'warning');
+      fetchMemberships();
+    } catch { message.error('Lỗi khi xóa!'); }
   };
 
   const handleSubmit = async (values) => {
     try {
       if (editing) {
-        await membershipApi.updateMembership(editing.id, { ...editing, ...values }).catch(() => {});
-        setMemberships(prev => prev.map(m => m.id === editing.id ? { ...m, ...values } : m));
+        await membershipApi.updateMembership(editing.id, { ...editing, ...values });
         addNotification('Cập nhật Hạng TV', `Đã cập nhật: ${values.tierName}`, 'info');
       } else {
-        const newItem = { id: Date.now(), ...values, memberCount: 0 };
-        await membershipApi.createMembership(values).catch(() => {});
-        setMemberships(prev => [...prev, newItem]);
+        await membershipApi.createMembership(values);
         addNotification('Hạng TV Mới', `Đã tạo: ${values.tierName} (${values.discountPercent}% giảm)`, 'success');
       }
       message.success(editing ? 'Cập nhật thành công!' : 'Thêm thành công!');
       setIsModalVisible(false);
+      fetchMemberships();
     } catch { message.error('Lỗi khi lưu!'); }
   };
 
@@ -96,10 +105,10 @@ const MembershipsPage = () => {
         <Row gutter={12}>
           {[
             { label: 'Tổng hạng', value: memberships.length },
-            { label: 'Tổng thành viên', value: totalMembers.toLocaleString() },
+            { label: 'Tổng thành viên', value: totalMembers.toLocaleString('vi-VN') },
           ].map(s => (
             <Col key={s.label}>
-              <div style={{ background: 'rgba(255,255,255,0.15)', padding: '10px 18px', borderRadius: 12, textAlign: 'center', border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(8px)', minWidth: 90 }}>
+              <div style={{ background: 'rgba(255,255,255,0.15)', padding: '10px 18px', borderRadius: 12, textAlign: 'center', border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(8px)', minWidth: 100 }}>
                 <div style={{ fontSize: 22, fontWeight: 800 }}>{s.value}</div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>{s.label}</div>
               </div>
@@ -111,30 +120,56 @@ const MembershipsPage = () => {
       {/* Tier Cards */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         {memberships.map(tier => {
-          const cfg = TIER_CONFIG[tier.tierName] || { color: '#1677ff', bg: '#e6f4ff', emoji: '⭐', tag: 'blue' };
-          const pct = Math.round((tier.memberCount || 0) / totalMembers * 100);
+          const cfg = getConfig(tier.tierName);
+          const pct = totalMembers ? Math.round((tier.memberCount || 0) / totalMembers * 100) : 0;
           return (
             <Col xs={24} sm={12} lg={8} xl={6} key={tier.id}>
-              <Card style={{ borderRadius: 16, border: `2px solid ${cfg.color}30`, boxShadow: `0 4px 16px ${cfg.color}15`, overflow: 'hidden', background: cfg.bg }} styles={{ body: { padding: '20px' } }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <div style={{ fontSize: 44 }}>{cfg.emoji}</div>
-                  <Space direction="vertical" size={4} align="end">
-                    <Button size="small" type="text" icon={<EditOutlined />} style={{ color: cfg.color }} onClick={() => handleEdit(tier)} />
-                    <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(tier.id)} />
-                  </Space>
-                </div>
-                <Text strong style={{ fontSize: 18, color: cfg.color, display: 'block' }}>{tier.tierName}</Text>
-                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>{tier.perks || 'Đặc quyền thành viên'}</Text>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <Tag style={{ background: `${cfg.color}20`, color: cfg.color, border: `1px solid ${cfg.color}40`, borderRadius: 6 }}>{tier.discountPercent}% OFF</Tag>
-                  <Text type="secondary" style={{ fontSize: 12 }}>≥ {(tier.minPoints || 0).toLocaleString()} điểm</Text>
-                </div>
-                <div style={{ marginTop: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <Text style={{ fontSize: 12 }}><TeamOutlined /> {(tier.memberCount || 0).toLocaleString()} thành viên</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{pct}%</Text>
+              <Card
+                style={{ borderRadius: 16, border: 'none', boxShadow: `0 4px 20px ${cfg.color}25`, overflow: 'hidden', background: cfg.bg }}
+                styles={{ body: { padding: 0 } }}
+              >
+                {/* Header strip */}
+                <div style={{ background: cfg.gradient, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 36 }}>{cfg.emoji}</div>
+                  <div style={{ textAlign: 'right' }}>
+                    <Text style={{ color: 'white', fontWeight: 800, fontSize: 18, display: 'block' }}>{tier.tierName}</Text>
+                    <Tag style={{ background: 'rgba(255,255,255,0.25)', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700 }}>
+                      {tier.discountPercent}% OFF
+                    </Tag>
                   </div>
+                </div>
+                {/* Body */}
+                <div style={{ padding: '16px 20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>Điểm tối thiểu</Text>
+                      <Text strong style={{ color: cfg.color, fontSize: 15 }}>≥ {(tier.minPoints || 0).toLocaleString('vi-VN')} điểm</Text>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>Thành viên</Text>
+                      <Text strong style={{ fontSize: 15 }}><TeamOutlined /> {(tier.memberCount || 0).toLocaleString('vi-VN')}</Text>
+                    </div>
+                  </div>
+                  {tier.perks && (
+                    <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 10 }}>
+                      🎁 {tier.perks}
+                    </Text>
+                  )}
                   <Progress percent={pct} showInfo={false} size="small" strokeColor={cfg.color} trailColor={`${cfg.color}20`} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
+                    <Button size="small" icon={<EditOutlined />} style={{ color: cfg.color, borderColor: cfg.color }}
+                      onClick={() => handleEdit(tier)}>
+                      Chỉnh sửa
+                    </Button>
+                    <Popconfirm
+                      title={`Xóa hạng "${tier.tierName}"?`}
+                      description="Các thành viên đang ở hạng này sẽ mất liên kết."
+                      onConfirm={() => handleDelete(tier.id, tier.tierName)}
+                      okText="Xóa" cancelText="Hủy" okType="danger"
+                    >
+                      <Button size="small" danger icon={<DeleteOutlined />} />
+                    </Popconfirm>
+                  </div>
                 </div>
               </Card>
             </Col>
@@ -142,26 +177,80 @@ const MembershipsPage = () => {
         })}
       </Row>
 
+      {/* Action buttons */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginBottom: 20 }}>
-        <Button icon={<ReloadOutlined />} onClick={fetchMemberships}>Làm mới</Button>
+        <Button icon={<ReloadOutlined />} onClick={fetchMemberships} loading={loading}>Làm mới</Button>
         <Button type="primary" icon={<PlusOutlined />} style={{ background: '#d4a017', borderColor: '#d4a017' }}
           onClick={() => { setEditing(null); form.resetFields(); setIsModalVisible(true); }}>
           Thêm Hạng Mới
         </Button>
       </div>
 
-      <Modal title={editing ? 'Cập nhật Hạng Thành Viên' : 'Thêm Hạng Thành Viên Mới'} open={isModalVisible} onCancel={() => setIsModalVisible(false)} onOk={() => form.submit()} okText="Lưu" cancelText="Hủy">
+      {/* Table view */}
+      <Card style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }} styles={{ body: { padding: 0 } }}>
+        <Table
+          dataSource={memberships}
+          rowKey="id"
+          loading={loading}
+          pagination={false}
+          style={{ borderRadius: 16, overflow: 'hidden' }}
+          columns={[
+            {
+              title: 'Hạng', key: 'tier',
+              render: (_, r) => {
+                const cfg = getConfig(r.tierName);
+                return (
+                  <Space>
+                    <span style={{ fontSize: 22 }}>{cfg.emoji}</span>
+                    <Text strong style={{ color: cfg.color, fontSize: 14 }}>{r.tierName}</Text>
+                  </Space>
+                );
+              }
+            },
+            { title: 'Điểm Tối Thiểu', dataIndex: 'minPoints', key: 'minPoints', render: v => <Text>{(v || 0).toLocaleString('vi-VN')} điểm</Text> },
+            { title: 'Giảm Giá', dataIndex: 'discountPercent', key: 'discountPercent', render: v => <Tag color="gold" style={{ fontWeight: 700 }}>{v}% OFF</Tag> },
+            { title: 'Thành Viên', dataIndex: 'memberCount', key: 'memberCount', render: v => <Text strong>{(v || 0).toLocaleString('vi-VN')}</Text> },
+            { title: 'Đặc Quyền', dataIndex: 'perks', key: 'perks', render: v => <Text type="secondary" style={{ fontSize: 12 }}>{v || '—'}</Text> },
+            {
+              title: 'Thao Tác', key: 'action', align: 'center', width: 100,
+              render: (_, record) => (
+                <Space>
+                  <Button type="text" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                  <Popconfirm title={`Xóa hạng "${record.tierName}"?`} onConfirm={() => handleDelete(record.id, record.tierName)} okText="Xóa" cancelText="Hủy" okType="danger">
+                    <Button type="text" danger icon={<DeleteOutlined />} />
+                  </Popconfirm>
+                </Space>
+              )
+            }
+          ]}
+        />
+      </Card>
+
+      <Modal
+        title={editing ? `Cập nhật Hạng: ${editing.tierName}` : 'Thêm Hạng Thành Viên Mới'}
+        open={isModalVisible}
+        onCancel={() => setIsModalVisible(false)}
+        onOk={() => form.submit()}
+        okText="Lưu" cancelText="Hủy"
+        width={500}
+      >
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
-          <Form.Item name="tierName" label="Tên Hạng" rules={[{ required: true }]}>
+          <Form.Item name="tierName" label="Tên Hạng" rules={[{ required: true, message: 'Nhập tên hạng!' }]}>
             <Input placeholder="VD: Bronze, Silver, Gold, Platinum, Diamond" />
           </Form.Item>
-          <Form.Item name="minPoints" label="Điểm Tối Thiểu" rules={[{ required: true }]}>
-            <InputNumber style={{ width: '100%' }} min={0} placeholder="VD: 0, 500, 2000" />
-          </Form.Item>
-          <Form.Item name="discountPercent" label="Mức Giảm Giá (%)" rules={[{ required: true }]}>
-            <InputNumber style={{ width: '100%' }} min={0} max={100} step={0.5} placeholder="VD: 5, 10, 15" />
-          </Form.Item>
-          <Form.Item name="perks" label="Đặc Quyền">
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="minPoints" label="Điểm Tối Thiểu" rules={[{ required: true }]}>
+                <InputNumber style={{ width: '100%' }} min={0} placeholder="VD: 0, 500, 2000" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="discountPercent" label="Mức Giảm (%)" rules={[{ required: true }]}>
+                <InputNumber style={{ width: '100%' }} min={0} max={100} step={0.5} placeholder="VD: 5, 10, 15" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="perks" label="Đặc Quyền (mô tả)">
             <Input.TextArea rows={2} placeholder="VD: Free breakfast, Late checkout, Room upgrade..." />
           </Form.Item>
         </Form>

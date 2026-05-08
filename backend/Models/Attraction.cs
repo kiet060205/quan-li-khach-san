@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace HotelManagementApi.Models;
@@ -14,4 +14,10 @@ public partial class Attraction
     public string? Description { get; set; }
 
     public string? MapEmbedLink { get; set; }
+
+    public string? Category { get; set; }
+
+    public decimal? Latitude { get; set; }
+
+    public decimal? Longitude { get; set; }
 }

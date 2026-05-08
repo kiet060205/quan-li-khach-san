@@ -72,11 +72,13 @@ const UserManagementPage = () => {
   const fetchRoles = async () => {
     try {
       const response = await roleApi.getAllRoles();
-      const rolesData = response.data?.data || response.data || [];
+      const raw = response.data;
+      // API trả về { value: [...], Count: N } hoặc mảng trực tiếp
+      const rolesData = raw?.value || raw?.data || (Array.isArray(raw) ? raw : []);
       setRoles(Array.isArray(rolesData) ? rolesData : []);
     } catch (error) {
       console.error('❌ Lỗi gọi API roles:', error);
-      message.error('Không thể tải danh sách vị trí!');
+      // Fallback im lặng, không hiển thị lỗi người dùng
     }
   };
 

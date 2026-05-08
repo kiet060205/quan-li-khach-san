@@ -5,10 +5,16 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Microsoft.OpenApi.Models;
 
+using HotelManagementApi.Filters;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Thêm dịch vụ Controllers và TRỊ BỆNH VÒNG LẶP VÔ TẬN
-builder.Services.AddControllers().AddJsonOptions(options =>
+builder.Services.AddControllers(options =>
+{
+    // Đăng ký AuditLogFilter toàn cục - tự động log mọi hành động tạo/sửa/xóa
+    options.Filters.Add<AuditLogFilter>();
+}).AddJsonOptions(options =>
 {
     // Bỏ qua các đối tượng bị lặp lại, không cố gắng đào sâu vào chúng nữa
     options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;

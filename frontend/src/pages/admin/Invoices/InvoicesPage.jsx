@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Table, Card, Typography, Button, Space, Modal, Form, Input, InputNumber, Select, message, Tag, Tooltip, Divider, Row, Col, Descriptions } from 'antd';
+import { Table, Card, Typography, Button, Space, Modal, Form, Input, InputNumber, Select, message, Tag, Tooltip, Divider, Row, Col, Descriptions, Popconfirm } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, FileTextOutlined, CreditCardOutlined, PrinterOutlined, EyeOutlined } from '@ant-design/icons';
 import { invoiceApi } from '../../../api/financeApi';
 import { useNotification } from '../../../context/notificationContext';
@@ -109,11 +109,14 @@ const InvoicePrintView = ({ invoice }) => {
 // ─── Main Component ─────────────────────────────────────────────
 const InvoicesPage = () => {
   const [invoices, setInvoices] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [printModalVisible, setPrintModalVisible] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState(null);
   const [printingInvoice, setPrintingInvoice] = useState(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [form] = Form.useForm();
   const { addNotification } = useNotification();
 
@@ -121,22 +124,35 @@ const InvoicesPage = () => {
     setLoading(true);
     try {
       const res = await invoiceApi.getAllInvoices();
-      const data = res.data?.data || res.data || [];
-      setInvoices(Array.isArray(data) ? data : []);
+      const raw = res.data;
+      // API trả về { value: [...] }
+      const data = raw?.value || raw?.data || (Array.isArray(raw) ? raw : []);
+      setInvoices(data);
+      setFiltered(data);
     } catch (error) {
       console.error(error);
-      // Mock data
-      setInvoices([
-        { id: 1, bookingCode: 'BK-001', guestName: 'Nguyễn Văn An', totalRoomAmount: 3400000, totalServiceAmount: 500000, discountAmount: 200000, taxAmount: 370000, finalTotal: 4070000, status: 'Paid', paymentCount: 1 },
-        { id: 2, bookingCode: 'BK-002', guestName: 'Trần Thị Bích', totalRoomAmount: 12000000, totalServiceAmount: 800000, discountAmount: 0, taxAmount: 1280000, finalTotal: 14080000, status: 'Unpaid', paymentCount: 0 },
-        { id: 3, bookingCode: 'BK-003', guestName: 'Lê Văn Cường', totalRoomAmount: 2000000, totalServiceAmount: 200000, discountAmount: 100000, taxAmount: 210000, finalTotal: 2310000, status: 'Partial', paymentCount: 1 },
-      ]);
+      message.error('Không thể tải danh sách hóa đơn!');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => { fetchInvoices(); }, []);
+
+  // Filter
+  useEffect(() => {
+    let result = invoices;
+    if (statusFilter !== 'ALL') result = result.filter(i => i.status === statusFilter);
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter(i =>
+        i.bookingCode?.toLowerCase().includes(q) ||
+        i.guestName?.toLowerCase().includes(q) ||
+        String(i.id).includes(q)
+      );
+    }
+    setFiltered(result);
+  }, [search, statusFilter, invoices]);
 
   const handlePrint = (invoice) => {
     setPrintingInvoice(invoice);
@@ -268,14 +284,29 @@ const InvoicesPage = () => {
         </Space>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Input.Search
+          placeholder="Tìm theo booking, tên khách, ID..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ width: 280 }}
+          allowClear
+        />
+        <Select value={statusFilter} onChange={setStatusFilter} style={{ width: 200 }}>
+          <Option value="ALL">Tất cả trạng thái</Option>
+          <Option value="Unpaid">Chưa thanh toán</Option>
+          <Option value="Partial">Thanh toán một phần</Option>
+          <Option value="Paid">Đã thanh toán</Option>
+          <Option value="Cancelled">Đã hủy</Option>
+        </Select>
+        <div style={{ flex: 1 }} />
         <Button onClick={handleExportExcel} style={{ background: '#16a34a', color: 'white', fontWeight: 600, border: 'none' }}>Xuất Excel</Button>
         <Button icon={<ReloadOutlined />} onClick={fetchInvoices}>Làm mới</Button>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingInvoice(null); form.resetFields(); setIsModalVisible(true); }}>Tạo Hóa Đơn</Button>
       </div>
 
       <Card style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }} styles={{ body: { padding: 0 } }}>
-        <Table columns={columns} dataSource={invoices} rowKey="id" loading={loading} pagination={{ pageSize: 10, showTotal: t => `Tổng ${t} hóa đơn` }} scroll={{ x: 1100 }} style={{ borderRadius: 16, overflow: 'hidden' }} />
+        <Table columns={columns} dataSource={filtered} rowKey="id" loading={loading} pagination={{ pageSize: 10, showTotal: t => `Tổng ${t} hóa đơn` }} scroll={{ x: 1100 }} style={{ borderRadius: 16, overflow: 'hidden' }} />
       </Card>
 
       {/* Modal Form */}

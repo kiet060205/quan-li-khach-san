@@ -134,6 +134,9 @@ public partial class HotelDbContext : DbContext
             entity.Property(e => e.Name)
                 .HasMaxLength(255)
                 .HasColumnName("name");
+            entity.Property(e => e.Category).HasColumnName("category").HasMaxLength(255);
+            entity.Property(e => e.Latitude).HasColumnName("latitude").HasColumnType("decimal(9, 6)");
+            entity.Property(e => e.Longitude).HasColumnName("longitude").HasColumnType("decimal(9, 6)");
         });
 
         modelBuilder.Entity<AuditLog>(entity =>
