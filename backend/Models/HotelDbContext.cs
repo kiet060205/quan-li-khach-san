@@ -444,6 +444,9 @@ public partial class HotelDbContext : DbContext
             entity.Property(e => e.Rating).HasColumnName("rating");
             entity.Property(e => e.RoomTypeId).HasColumnName("room_type_id");
             entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.IsApproved)
+                .HasDefaultValue(false)
+                .HasColumnName("is_approved");
 
             entity.HasOne(d => d.RoomType).WithMany(p => p.Reviews)
                 .HasForeignKey(d => d.RoomTypeId)

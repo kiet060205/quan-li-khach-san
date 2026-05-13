@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace HotelManagementApi.Models;
@@ -16,6 +16,8 @@ public partial class Review
     public string? Comment { get; set; }
 
     public DateTime? CreatedAt { get; set; }
+
+    public bool IsApproved { get; set; } = false;
 
     public virtual RoomType? RoomType { get; set; }
 

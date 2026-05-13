@@ -2,8 +2,10 @@ import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
 
 // Tạo một bản sao của axios với cấu hình mặc định
+export const API_BASE = 'http://localhost:5262';
+
 const axiosClient = axios.create({
-  baseURL: 'http://localhost:5262/api', // Nối thẳng vào API của .NET (nhớ check lại cổng 5262)
+  baseURL: `${API_BASE}/api`, // Nối thẳng vào API của .NET (nhớ check lại cổng 5262)
   headers: {
     'Content-Type': 'application/json',
   },

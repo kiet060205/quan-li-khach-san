@@ -33,5 +33,4 @@ export const orderServiceApi = {
 
 export const auditLogApi = {
   getAllAuditLogs: () => axiosClient.get('/AuditLogs'),
-  deleteAuditLog: (id) => axiosClient.delete(`/AuditLogs/${id}`),
 };

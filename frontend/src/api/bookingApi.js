@@ -4,6 +4,10 @@ export const bookingApi = {
   getAllBookings: () => {
     return axiosClient.get('/Bookings');
   },
+  getByUser: (userId) => {
+    return axiosClient.get(`/Bookings/user/${userId}`);
+  },
+
   getBookingById: (id) => {
     return axiosClient.get(`/Bookings/${id}`);
   },

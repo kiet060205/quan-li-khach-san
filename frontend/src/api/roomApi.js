@@ -9,6 +9,18 @@ export const roomApi = {
     return axiosClient.get('/RoomTypes');
   },
 
+  addRoomTypeImageUrl: (id, imageUrl) => {
+    return axiosClient.post(`/RoomTypes/${id}/images/url`, { imageUrl });
+  },
+
+  deleteRoomTypeImage: (imageId) => {
+    return axiosClient.delete(`/RoomTypes/images/${imageId}`);
+  },
+
+  setPrimaryImage: (roomTypeId, imageId) => {
+    return axiosClient.patch(`/RoomTypes/${roomTypeId}/images/${imageId}/set-primary`);
+  },
+
   getRoomInventory: (roomId) => {
     return axiosClient.get(`/RoomInventories/room/${roomId}`);
   },

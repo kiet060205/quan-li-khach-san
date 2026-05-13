@@ -69,7 +69,85 @@ namespace HotelManagementApi.Controllers
             return Ok(result);
         }
 
-        // GET: api/Bookings/5
+        // GET: api/Bookings/lookup?q=BK123 hoặc q=14 — Tìm booking theo code hoặc ID (cho admin tạo hóa đơn)
+        [HttpGet("lookup")]
+        public async Task<ActionResult<object>> LookupBooking([FromQuery] string q)
+        {
+            if (string.IsNullOrWhiteSpace(q))
+                return BadRequest(new { message = "Vui lòng nhập mã booking hoặc ID" });
+
+            Booking? booking = null;
+
+            // Thử parse thành ID trước
+            if (int.TryParse(q.Trim(), out int bookingId))
+            {
+                booking = await _context.Bookings
+                    .Include(b => b.BookingDetails).ThenInclude(d => d.Room).ThenInclude(r => r!.RoomType)
+                    .Include(b => b.BookingDetails).ThenInclude(d => d.RoomType)
+                    .FirstOrDefaultAsync(b => b.Id == bookingId);
+            }
+
+            // Nếu không tìm được bằng ID, tìm theo booking code
+            if (booking == null)
+            {
+                booking = await _context.Bookings
+                    .Include(b => b.BookingDetails).ThenInclude(d => d.Room).ThenInclude(r => r!.RoomType)
+                    .Include(b => b.BookingDetails).ThenInclude(d => d.RoomType)
+                    .FirstOrDefaultAsync(b => b.BookingCode == q.Trim());
+            }
+
+            if (booking == null)
+                return NotFound(new { message = $"Không tìm thấy booking: {q}" });
+
+            var result = new
+            {
+                booking.Id,
+                booking.BookingCode,
+                booking.GuestName,
+                booking.GuestPhone,
+                booking.GuestEmail,
+                booking.Status,
+                bookingDetails = booking.BookingDetails.Select(d => new {
+                    d.Id, d.CheckInDate, d.CheckOutDate, d.PricePerNight,
+                    roomTypeName = d.RoomType?.Name ?? d.Room?.RoomType?.Name,
+                    nights = (int)Math.Ceiling((d.CheckOutDate - d.CheckInDate).TotalDays),
+                    subtotal = d.PricePerNight * (decimal)Math.Ceiling((d.CheckOutDate - d.CheckInDate).TotalDays)
+                }).ToList()
+            };
+            return Ok(result);
+        }
+
+        // GET: api/Bookings/user/5 — Lấy booking của một user cụ thể
+        [HttpGet("user/{userId}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetBookingsByUser(int userId)
+
+        {
+            var bookings = await _context.Bookings
+                .Include(b => b.User).Include(b => b.Voucher)
+                .Include(b => b.BookingDetails).ThenInclude(d => d.Room).ThenInclude(r => r.RoomType)
+                .Include(b => b.BookingDetails).ThenInclude(d => d.RoomType)
+                .Where(b => b.UserId == userId)
+                .OrderByDescending(b => b.Id).ToListAsync();
+
+            var result = bookings.Select(b => new
+            {
+                b.Id, b.BookingCode, b.GuestName, b.GuestPhone, b.GuestEmail, b.Status, b.VoucherId,
+                voucherCode = b.Voucher != null ? b.Voucher.Code : null,
+                userId = b.UserId,
+                userName = b.User != null ? b.User.FullName : null,
+                bookingDetails = b.BookingDetails.Select(d => new
+                {
+                    d.Id, d.BookingId, d.RoomId, d.RoomTypeId, d.CheckInDate, d.CheckOutDate, d.PricePerNight,
+                    roomNumber = d.Room != null ? d.Room.RoomNumber : null,
+                    roomTypeName = d.RoomType != null ? d.RoomType.Name : (d.Room?.RoomType != null ? d.Room.RoomType.Name : null),
+                    nights = (int)Math.Ceiling((d.CheckOutDate - d.CheckInDate).TotalDays),
+                    subtotal = d.PricePerNight * (decimal)Math.Ceiling((d.CheckOutDate - d.CheckInDate).TotalDays)
+                }).ToList()
+            });
+            return Ok(result);
+        }
+
+
         [HttpGet("{id}")]
         public async Task<ActionResult<object>> GetBooking(int id)
         {

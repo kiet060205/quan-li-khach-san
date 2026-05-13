@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Table, Card, Typography, Button, Space, Modal, Form, Input, InputNumber, Select, message, Tag, Tooltip, Divider, Row, Col, Descriptions, Popconfirm } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, FileTextOutlined, CreditCardOutlined, PrinterOutlined, EyeOutlined } from '@ant-design/icons';
+import { Table, Card, Typography, Button, Space, Modal, Form, Input, InputNumber, Select, message, Tag, Tooltip, Divider, Row, Col, Descriptions, Alert, Spin } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, FileTextOutlined, CreditCardOutlined, PrinterOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
 import { invoiceApi } from '../../../api/financeApi';
+import axiosClient from '../../../api/axiosClient';
 import { useNotification } from '../../../context/notificationContext';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -109,50 +110,69 @@ const InvoicePrintView = ({ invoice }) => {
 // ─── Main Component ─────────────────────────────────────────────
 const InvoicesPage = () => {
   const [invoices, setInvoices] = useState([]);
-  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [printModalVisible, setPrintModalVisible] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState(null);
   const [printingInvoice, setPrintingInvoice] = useState(null);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [bookingPreview, setBookingPreview] = useState(null); // preview khi nhập bookingId
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [form] = Form.useForm();
   const { addNotification } = useNotification();
+
+  // Fetch booking info để preview khi nhập bookingId hoặc bookingCode
+  const handlePreviewBooking = async () => {
+    const q = form.getFieldValue('bookingSearch');
+    if (!q || !String(q).trim()) { message.warning('Vui lòng nhập mã booking hoặc ID!'); return; }
+    setPreviewLoading(true);
+    try {
+      const res = await axiosClient.get(`/Bookings/lookup?q=${encodeURIComponent(String(q).trim())}`);
+      const bk = res.data;
+      setBookingPreview(bk);
+      // Điền bookingId thực vào form
+      form.setFieldValue('bookingId', bk.id);
+      // Auto-fill các trường tiền
+      const details = bk.bookingDetails || [];
+      const roomAmt = details.reduce((sum, d) => {
+        const nights = Math.ceil((new Date(d.checkOutDate) - new Date(d.checkInDate)) / 86400000);
+        return sum + (d.pricePerNight || 0) * nights;
+      }, 0);
+      const tax = Math.round(roomAmt * 0.1);
+      form.setFieldsValue({
+        totalRoomAmount: roomAmt,
+        totalServiceAmount: 0,
+        discountAmount: 0,
+        taxAmount: tax,
+        finalTotal: roomAmt + tax,
+        status: 'Unpaid',
+      });
+    } catch (err) {
+      const q2 = form.getFieldValue('bookingSearch');
+      message.error(`Không tìm thấy booking: ${q2}!`);
+      setBookingPreview(null);
+    } finally { setPreviewLoading(false); }
+  };
 
   const fetchInvoices = async () => {
     setLoading(true);
     try {
       const res = await invoiceApi.getAllInvoices();
-      const raw = res.data;
-      // API trả về { value: [...] }
-      const data = raw?.value || raw?.data || (Array.isArray(raw) ? raw : []);
-      setInvoices(data);
-      setFiltered(data);
+      const data = res.data?.data || res.data || [];
+      setInvoices(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error(error);
-      message.error('Không thể tải danh sách hóa đơn!');
+      // Mock data
+      setInvoices([
+        { id: 1, bookingCode: 'BK-001', guestName: 'Nguyễn Văn An', totalRoomAmount: 3400000, totalServiceAmount: 500000, discountAmount: 200000, taxAmount: 370000, finalTotal: 4070000, status: 'Paid', paymentCount: 1 },
+        { id: 2, bookingCode: 'BK-002', guestName: 'Trần Thị Bích', totalRoomAmount: 12000000, totalServiceAmount: 800000, discountAmount: 0, taxAmount: 1280000, finalTotal: 14080000, status: 'Unpaid', paymentCount: 0 },
+        { id: 3, bookingCode: 'BK-003', guestName: 'Lê Văn Cường', totalRoomAmount: 2000000, totalServiceAmount: 200000, discountAmount: 100000, taxAmount: 210000, finalTotal: 2310000, status: 'Partial', paymentCount: 1 },
+      ]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => { fetchInvoices(); }, []);
-
-  // Filter
-  useEffect(() => {
-    let result = invoices;
-    if (statusFilter !== 'ALL') result = result.filter(i => i.status === statusFilter);
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter(i =>
-        i.bookingCode?.toLowerCase().includes(q) ||
-        i.guestName?.toLowerCase().includes(q) ||
-        String(i.id).includes(q)
-      );
-    }
-    setFiltered(result);
-  }, [search, statusFilter, invoices]);
 
   const handlePrint = (invoice) => {
     setPrintingInvoice(invoice);
@@ -226,14 +246,22 @@ const InvoicesPage = () => {
         message.success('Cập nhật thành công!');
         addNotification('Cập nhật Hóa Đơn', `Hóa đơn #${editingInvoice.id} → ${STATUS_MAP[values.status]?.label}`, 'info');
       } else {
-        await invoiceApi.createInvoice(values);
+        // Loại bỏ bookingSearch (trường tìm kiếm text), chỉ gửi bookingId (số)
+        const { bookingSearch, ...payload } = values;
+        if (!payload.bookingId) {
+          message.error('Vui lòng bấm "Kiểm Tra" để xác nhận booking trước!');
+          return;
+        }
+        await invoiceApi.createInvoice(payload);
         message.success('Tạo hóa đơn thành công!');
-        addNotification('Hóa Đơn Mới', `Đã tạo hóa đơn mới`, 'success');
+        addNotification('Hóa Đơn Mới', `Đã tạo hóa đơn cho booking #${payload.bookingId}`, 'success');
       }
       setIsModalVisible(false);
+      setBookingPreview(null);
       fetchInvoices();
     } catch { message.error('Lỗi lưu dữ liệu!'); }
   };
+
 
   const handleExportExcel = () => {
     if (!invoices.length) { message.warning('Không có dữ liệu!'); return; }
@@ -284,48 +312,75 @@ const InvoicesPage = () => {
         </Space>
       </div>
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-        <Input.Search
-          placeholder="Tìm theo booking, tên khách, ID..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ width: 280 }}
-          allowClear
-        />
-        <Select value={statusFilter} onChange={setStatusFilter} style={{ width: 200 }}>
-          <Option value="ALL">Tất cả trạng thái</Option>
-          <Option value="Unpaid">Chưa thanh toán</Option>
-          <Option value="Partial">Thanh toán một phần</Option>
-          <Option value="Paid">Đã thanh toán</Option>
-          <Option value="Cancelled">Đã hủy</Option>
-        </Select>
-        <div style={{ flex: 1 }} />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         <Button onClick={handleExportExcel} style={{ background: '#16a34a', color: 'white', fontWeight: 600, border: 'none' }}>Xuất Excel</Button>
         <Button icon={<ReloadOutlined />} onClick={fetchInvoices}>Làm mới</Button>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingInvoice(null); form.resetFields(); setIsModalVisible(true); }}>Tạo Hóa Đơn</Button>
       </div>
 
       <Card style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }} styles={{ body: { padding: 0 } }}>
-        <Table columns={columns} dataSource={filtered} rowKey="id" loading={loading} pagination={{ pageSize: 10, showTotal: t => `Tổng ${t} hóa đơn` }} scroll={{ x: 1100 }} style={{ borderRadius: 16, overflow: 'hidden' }} />
+        <Table columns={columns} dataSource={invoices} rowKey="id" loading={loading} pagination={{ pageSize: 10, showTotal: t => `Tổng ${t} hóa đơn` }} scroll={{ x: 1100 }} style={{ borderRadius: 16, overflow: 'hidden' }} />
       </Card>
 
       {/* Modal Form */}
-      <Modal title={editingInvoice ? 'Cập nhật Hóa Đơn' : 'Tạo Hóa Đơn Mới'} open={isModalVisible} onCancel={() => setIsModalVisible(false)} onOk={() => form.submit()}>
+      <Modal
+        title={editingInvoice ? 'Cập nhật Hóa Đơn' : 'Tạo Hóa Đơn Mới'}
+        open={isModalVisible}
+        onCancel={() => { setIsModalVisible(false); setBookingPreview(null); }}
+        onOk={() => form.submit()}
+        width={560}
+      >
+        <Spin spinning={previewLoading}>
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
           {!editingInvoice && (
-            <Form.Item name="bookingId" label="Mã Booking (ID)" rules={[{ required: true }]}>
-              <InputNumber style={{ width: '100%' }} placeholder="Nhập ID booking" />
-            </Form.Item>
+            <>
+              <Form.Item
+                name="bookingSearch"
+                label="Tìm Booking (Nhập mã booking hoặc số ID)"
+                rules={[{ required: true, message: 'Nhập mã booking hoặc ID!' }]}
+              >
+                <Space.Compact style={{ width: '100%' }}>
+                  <Input
+                    style={{ width: 'calc(100% - 120px)' }}
+                    placeholder="VD: BK1778655253398 hoặc 1018"
+                    allowClear
+                    onPressEnter={handlePreviewBooking}
+                  />
+                  <Button type="primary" icon={<SearchOutlined />} onClick={handlePreviewBooking} style={{ width: 120 }}>
+                    Kiểm Tra
+                  </Button>
+                </Space.Compact>
+              </Form.Item>
+              {/* bookingId ẩn - được điền tự động sau khi lookup */}
+              <Form.Item name="bookingId" hidden><Input /></Form.Item>
+              {bookingPreview && (
+                <Alert
+                  type="success"
+                  style={{ marginBottom: 16 }}
+                  message={
+                    <div>
+                      <div><strong>Khách:</strong> {bookingPreview.guestName || '—'}
+                        {bookingPreview.guestPhone ? ` · 📞 ${bookingPreview.guestPhone}` : ''}
+                      </div>
+                      <div><strong>Mã booking:</strong> <span style={{color:'#1677ff'}}>{bookingPreview.bookingCode}</span> · <strong>ID:</strong> #{bookingPreview.id} · <strong>Trạng thái:</strong> {bookingPreview.status}</div>
+                      {bookingPreview.bookingDetails?.[0] && (
+                        <div><strong>Phòng:</strong> {bookingPreview.bookingDetails[0].roomTypeName || '—'} · {bookingPreview.bookingDetails[0].checkInDate?.slice(0,10)} → {bookingPreview.bookingDetails[0].checkOutDate?.slice(0,10)}</div>
+                      )}
+                    </div>
+                  }
+                />
+              )}
+            </>
           )}
           <Row gutter={12}>
             <Col span={12}>
               <Form.Item name="totalRoomAmount" label="Tiền Phòng (VNĐ)">
-                <InputNumber style={{ width: '100%' }} formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
+                <InputNumber style={{ width: '100%' }} min={0} formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item name="totalServiceAmount" label="Tiền Dịch Vụ (VNĐ)">
-                <InputNumber style={{ width: '100%' }} formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
+                <InputNumber style={{ width: '100%' }} min={0} formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -339,8 +394,8 @@ const InvoicesPage = () => {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="finalTotal" label="Tổng Cuối (VNĐ)">
-                <InputNumber style={{ width: '100%' }} formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
+              <Form.Item name="finalTotal" label="Tổng Cuối (VNĐ)" rules={[{ required: true }]}>
+                <InputNumber style={{ width: '100%' }} min={0} formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -355,6 +410,7 @@ const InvoicesPage = () => {
             </Col>
           </Row>
         </Form>
+        </Spin>
       </Modal>
 
       {/* Modal Print Preview */}

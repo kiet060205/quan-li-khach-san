@@ -73,6 +73,7 @@ const AdminLayout = () => {
       getItem('Thất thoát & Đền bù', '/admin/loss-compensation', <WarningOutlined />),
     ]},
     { key: 'g2', label: 'CƠ SỞ VẬT CHẤT', children: [
+      getItem('Hạng Phòng & Hình Ảnh', '/admin/room-types', <AppstoreAddOutlined />),
       getItem('Quản lý Phòng', '/admin/rooms', <BankOutlined />),
       getItem('Kho vật tư', '/admin/equipments', <InboxOutlined />),
       getItem('Tiện ích phòng (Amenities)', '/admin/amenities', <CoffeeOutlined />),

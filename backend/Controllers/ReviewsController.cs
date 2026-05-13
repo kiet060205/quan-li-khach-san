@@ -20,9 +20,21 @@ namespace HotelManagementApi.Controllers
             _context = context;
         }
 
-        // GET: api/Reviews
+        // GET: api/Reviews — chỉ trả về đánh giá đã được duyệt (public website)
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Review>>> GetReviews()
+        {
+            return await _context.Reviews
+                .Include(r => r.User)
+                .Include(r => r.RoomType)
+                .Where(r => r.IsApproved)
+                .OrderByDescending(r => r.Id)
+                .ToListAsync();
+        }
+
+        // GET: api/Reviews/all — trả về tất cả (dành cho admin)
+        [HttpGet("all")]
+        public async Task<ActionResult<IEnumerable<Review>>> GetAllReviews()
         {
             return await _context.Reviews
                 .Include(r => r.User)
@@ -46,6 +58,30 @@ namespace HotelManagementApi.Controllers
             }
 
             return review;
+        }
+
+        // PATCH: api/Reviews/5/approve — duyệt đánh giá (admin)
+        [HttpPatch("{id}/approve")]
+        public async Task<IActionResult> ApproveReview(int id)
+        {
+            var review = await _context.Reviews.FindAsync(id);
+            if (review == null) return NotFound();
+
+            review.IsApproved = true;
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "Đánh giá đã được duyệt!", id });
+        }
+
+        // PATCH: api/Reviews/5/reject — hủy duyệt (admin)
+        [HttpPatch("{id}/reject")]
+        public async Task<IActionResult> RejectReview(int id)
+        {
+            var review = await _context.Reviews.FindAsync(id);
+            if (review == null) return NotFound();
+
+            review.IsApproved = false;
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "Đã hủy duyệt đánh giá!", id });
         }
 
         // PUT: api/Reviews/5
@@ -78,11 +114,12 @@ namespace HotelManagementApi.Controllers
             return NoContent();
         }
 
-        // POST: api/Reviews
+        // POST: api/Reviews — review từ website, mặc định chưa duyệt
         [HttpPost]
         public async Task<ActionResult<Review>> PostReview(Review review)
         {
             review.CreatedAt = DateTime.UtcNow;
+            review.IsApproved = false; // Cần admin duyệt
             _context.Reviews.Add(review);
             await _context.SaveChangesAsync();
 

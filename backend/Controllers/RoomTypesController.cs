@@ -4,6 +4,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HotelManagementApi.Controllers
 {
+    public class ImageUrlDto {
+        public string ImageUrl { get; set; } = null!;
+    }
+
     [Route("api/[controller]")]
     [ApiController]
     public class RoomTypesController : ControllerBase
@@ -73,7 +77,34 @@ namespace HotelManagementApi.Controllers
             await _context.SaveChangesAsync();
 
             return Ok(new {
-Message = "Upload ảnh thành công!", 
+                Message = "Upload ảnh thành công!", 
+                ImageUrl = roomImage.ImageUrl 
+            });
+        }
+
+        // POST: api/RoomTypes/{id}/images/url
+        [HttpPost("{id}/images/url")]
+        public async Task<IActionResult> AddImageUrl(int id, [FromBody] ImageUrlDto dto)
+        {
+            if (string.IsNullOrEmpty(dto.ImageUrl))
+                return BadRequest(new { Message = "URL ảnh không được để trống." });
+
+            var roomType = await _context.RoomTypes.FindAsync(id);
+            if (roomType == null)
+                return NotFound(new { Message = "Không tìm thấy loại phòng này." });
+
+            var roomImage = new RoomImage
+            {
+                RoomTypeId = id,
+                ImageUrl = dto.ImageUrl,
+                IsPrimary = false 
+            };
+
+            _context.RoomImages.Add(roomImage);
+            await _context.SaveChangesAsync();
+
+            return Ok(new {
+                Message = "Thêm ảnh từ URL thành công!", 
                 ImageUrl = roomImage.ImageUrl 
             });
         }
@@ -105,13 +136,17 @@ Message = "Upload ảnh thành công!",
             }
 
             // Xóa luôn file vật lý lưu trong thư mục wwwroot để đỡ tốn dung lượng ổ cứng
-            var webRootPath = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-            // Xóa dấu '/' ở đầu chuỗi (nếu có) để nối path không bị lỗi
-            var filePath = Path.Combine(webRootPath, roomImage.ImageUrl.TrimStart('/')); 
-            
-            if (System.IO.File.Exists(filePath))
+            // Nhưng chỉ thực hiện nếu nó không phải là đường dẫn URL (Cloudinary)
+            if (!roomImage.ImageUrl.StartsWith("http"))
             {
-                System.IO.File.Delete(filePath);
+                var webRootPath = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+                // Xóa dấu '/' ở đầu chuỗi (nếu có) để nối path không bị lỗi
+                var filePath = Path.Combine(webRootPath, roomImage.ImageUrl.TrimStart('/')); 
+                
+                if (System.IO.File.Exists(filePath))
+                {
+                    System.IO.File.Delete(filePath);
+                }
             }
 
             _context.RoomImages.Remove(roomImage);
