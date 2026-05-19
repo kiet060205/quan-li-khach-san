@@ -8,12 +8,15 @@ import WebsiteLayout from './layouts/WebsiteLayout';
 
 import HomePage from './pages/website/HomePage';
 import RoomsPage from './pages/website/RoomsPage';
+import RoomDetailPage from './pages/website/RoomDetailPage';
 import ServicesPage from './pages/website/ServicesPage';
 import ReviewsPage from './pages/website/ReviewsPage';
 import WebsiteLoginPage from './pages/website/WebsiteLoginPage';
 import PaymentPage from './pages/website/PaymentPage';
 import PromotionsPage from './pages/website/PromotionsPage';
 import WebsiteProfilePage from './pages/website/WebsiteProfilePage';
+import NewsPage from './pages/website/NewsPage';
+import AttractionsWebPage from './pages/website/AttractionsWebPage';
 
 import RoleManagePage from './pages/admin/roles/RoleManagePage';
 import UserManagementPage from './pages/admin/UserManagement/UserManagementPage';
@@ -74,11 +77,14 @@ function App() {
           <Route element={<WebsiteLayout />}>
             <Route path="/" element={<HomePage />} />
             <Route path="/rooms" element={<RoomsPage />} />
+            <Route path="/rooms/:id" element={<RoomDetailPage />} />
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/reviews" element={<ReviewsPage />} />
             <Route path="/my-bookings" element={<PaymentPage />} />
             <Route path="/payment" element={<Navigate to="/my-bookings" replace />} />
             <Route path="/promotions" element={<PromotionsPage />} />
+            <Route path="/news" element={<NewsPage />} />
+            <Route path="/attractions" element={<AttractionsWebPage />} />
             <Route path="/profile" element={<ProtectedRoute><WebsiteProfilePage /></ProtectedRoute>} />
           </Route>
 

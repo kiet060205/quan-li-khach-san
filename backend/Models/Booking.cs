@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace HotelManagementApi.Models;
@@ -20,6 +20,8 @@ public partial class Booking
     public int? VoucherId { get; set; }
 
     public string? Status { get; set; }
+
+    public DateTime? CreatedAt { get; set; }
 
     public virtual ICollection<BookingDetail> BookingDetails { get; set; } = new List<BookingDetail>();
 

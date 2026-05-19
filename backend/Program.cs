@@ -6,6 +6,7 @@ using System.Text;
 using Microsoft.OpenApi.Models;
 
 using HotelManagementApi.Filters;
+using HotelManagementApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +24,13 @@ builder.Services.AddControllers(options =>
 // 2. Đăng ký DbContext kết nối với SQL Server
 builder.Services.AddDbContext<HotelDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// 3. Đăng ký Dashboard Service
+builder.Services.AddScoped<IRoleDashboardPeriodService, RoleDashboardPeriodService>();
+
+// 4. Đăng ký HttpClient cho MoMo
+builder.Services.AddHttpClient();
+
 
 // ================= CẤU HÌNH JWT AUTHENTICATION =================
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

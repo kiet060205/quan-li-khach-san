@@ -20,18 +20,20 @@ namespace HotelManagementApi.Controllers
             _env = env;
         }
 
-        // GET: api/Articles
+        // GET: api/Articles — public, không cần đăng nhập
         [HttpGet]
+        [AllowAnonymous]
         public async Task<ActionResult<IEnumerable<Article>>> GetArticles()
         {
             return await _context.Articles
                 .Include(a => a.Category)
-                .Include(a => a.Author) // Lấy kèm thông tin tác giả
+                .Include(a => a.Author)
                 .ToListAsync();
         }
 
-        // GET: api/Articles/{slug}
+        // GET: api/Articles/{slug} — public
         [HttpGet("{slug}")]
+        [AllowAnonymous]
         public async Task<ActionResult<Article>> GetArticleBySlug(string slug)
         {
             var article = await _context.Articles
@@ -86,30 +88,22 @@ namespace HotelManagementApi.Controllers
             return Ok(new { Message = "Đã xóa bài viết" });
         }
 
-        // POST: api/Articles/{id}/thumbnail
-        [HttpPost("{id}/thumbnail")]
-        public async Task<IActionResult> UploadThumbnail(int id, IFormFile file)
+        // PATCH: api/Articles/{id}/thumbnail — Nhan Cloudinary URL va luu vao DB
+        [HttpPatch("{id}/thumbnail")]
+        public async Task<IActionResult> UpdateThumbnailUrl(int id, [FromBody] UpdateImageUrlRequest req)
         {
-            if (file == null || file.Length == 0) return BadRequest("Vui lòng chọn ảnh.");
-
             var article = await _context.Articles.FindAsync(id);
-            if (article == null) return NotFound("Không tìm thấy bài viết.");
+            if (article == null) return NotFound(new { Message = "Khong tim thay bai viet." });
 
-            var uploadsFolder = Path.Combine(_env.WebRootPath ?? Directory.GetCurrentDirectory() + "/wwwroot", "thumbnails");
-            if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
-
-            var uniqueFileName = "article_" + id + "_" + Guid.NewGuid().ToString().Substring(0, 8) + Path.GetExtension(file.FileName);
-            var filePath = Path.Combine(uploadsFolder, uniqueFileName);
-
-            using (var fileStream = new FileStream(filePath, FileMode.Create))
-            {
-                await file.CopyToAsync(fileStream);
-            }
-
-            article.ThumbnailUrl = "/thumbnails/" + uniqueFileName;
+            article.ThumbnailUrl = req.Url;
             await _context.SaveChangesAsync();
 
-            return Ok(new { Message = "Upload ảnh bìa thành công!", ThumbnailUrl = article.ThumbnailUrl });
+            return Ok(new { Message = "Cap nhat anh bia thanh cong!", ThumbnailUrl = article.ThumbnailUrl });
         }
+    }
+
+    public class UpdateImageUrlRequest
+    {
+        public string Url { get; set; } = string.Empty;
     }
 }

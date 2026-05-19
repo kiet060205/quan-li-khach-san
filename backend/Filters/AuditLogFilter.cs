@@ -22,34 +22,42 @@ namespace HotelManagementApi.Filters
         // Bảng ánh xạ: tên controller -> tên bảng dữ liệu thân thiện
         private static readonly Dictionary<string, string> TABLE_MAP = new(StringComparer.OrdinalIgnoreCase)
         {
-            { "Attractions",       "Attraction"       },
-            { "Bookings",          "Booking"          },
-            { "Rooms",             "Room"             },
-            { "RoomTypes",         "RoomType"         },
-            { "RoomInventories",   "RoomInventory"    },
-            { "Users",             "User"             },
-            { "UserManagement",    "User"             },
-            { "Roles",             "Role"             },
-            { "Permissions",       "Permission"       },
-            { "Invoices",          "Invoice"          },
-            { "Payments",          "Payment"          },
-            { "OrderServices",     "OrderService"     },
-            { "Equipments",        "Equipment"        },
-            { "LossAndDamages",    "LossAndDamage"    },
-            { "Services",          "Service"          },
-            { "ServiceCategories", "ServiceCategory"  },
-            { "Articles",          "Article"          },
-            { "ArticleCategories", "ArticleCategory"  },
-            { "Vouchers",          "Voucher"          },
-            { "Reviews",           "Review"           },
-            { "Memberships",       "Membership"       },
-            { "Amenities",         "Amenity"          },
+            { "Attractions",        "Địa Điểm"           },
+            { "Bookings",           "Đặt Phòng"          },
+            { "Rooms",              "Phòng"              },
+            { "RoomTypes",          "Loại Phòng"         },
+            { "RoomInventories",    "Kho Vật Tư"         },
+            { "Users",              "Người Dùng"         },
+            { "UserManagement",     "Người Dùng"         },
+            { "Roles",              "Vai Trò"            },
+            { "Permissions",        "Quyền Hạn"          },
+            { "Invoices",           "Hóa Đơn"            },
+            { "Payments",           "Thanh Toán"         },
+            { "OrderServices",      "Dịch Vụ Đặt"        },
+            { "Equipments",         "Thiết Bị"           },
+            { "LossAndDamages",     "Tổn Thất"           },
+            { "Services",           "Dịch Vụ"            },
+            { "ServiceCategories",  "Danh Mục DV"        },
+            { "Articles",           "Bài Viết"           },
+            { "ArticleCategories",  "Danh Mục BV"        },
+            { "Vouchers",           "Voucher"            },
+            { "Reviews",            "Đánh Giá"           },
+            { "Memberships",        "Hạng Thành Viên"    },
+            { "Amenities",          "Tiện Nghi"          },
+            { "Momo",               "Thanh Toán MoMo"    },
         };
 
         // Chỉ log các HTTP Method thay đổi dữ liệu
         private static readonly HashSet<string> LOGGED_METHODS = new(StringComparer.OrdinalIgnoreCase)
         {
             "POST", "PUT", "PATCH", "DELETE"
+        };
+
+        // Các controller không cần log
+        private static readonly HashSet<string> SKIP_CONTROLLERS = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "AuditLogs", "Auth", "Notifications", "Dashboard",
+            "DashboardPeriods", "RoleDashboardPeriodStates"
         };
 
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
@@ -66,10 +74,8 @@ namespace HotelManagementApi.Filters
             // Xác định tên controller
             var controllerName = context.RouteData.Values["controller"]?.ToString() ?? "Unknown";
 
-            // Bỏ qua AuditLogs controller (không tự log chính mình) và Auth, Notifications
-            if (controllerName.Equals("AuditLogs", StringComparison.OrdinalIgnoreCase)
-                || controllerName.Equals("Auth", StringComparison.OrdinalIgnoreCase)
-                || controllerName.Equals("Notifications", StringComparison.OrdinalIgnoreCase))
+            // Bỏ qua các controller không cần thiết
+            if (SKIP_CONTROLLERS.Contains(controllerName))
             {
                 await next();
                 return;
@@ -93,50 +99,123 @@ namespace HotelManagementApi.Filters
                 _        => method.ToUpper()
             };
 
-            // Lấy dữ liệu body (request body)
-            string? requestBodyJson = null;
-            try
-            {
-                var bodyArg = context.ActionArguments.Values.FirstOrDefault(v => v != null && !(v is int) && !(v is string));
-                if (bodyArg != null)
-                    requestBodyJson = JsonSerializer.Serialize(bodyArg, new JsonSerializerOptions { WriteIndented = false });
-            }
-            catch { /* Bỏ qua nếu không serialize được */ }
-
             // Lấy record ID từ route (nếu có)
             int recordId = 0;
             if (context.RouteData.Values.TryGetValue("id", out var idVal) && idVal != null)
                 int.TryParse(idVal.ToString(), out recordId);
 
+            // Lấy dữ liệu body (request body) - serialize để lưu
+            string? requestBodyJson = null;
+            string? actionLabel = null;
+            try
+            {
+                // Tóm tắt action theo route
+                var actionName = context.RouteData.Values["action"]?.ToString() ?? "";
+                actionLabel = actionName switch
+                {
+                    var a when a.Contains("Status", StringComparison.OrdinalIgnoreCase) => "UPDATE_STATUS",
+                    var a when a.Contains("Thumbnail", StringComparison.OrdinalIgnoreCase) => "UPLOAD_IMAGE",
+                    var a when a.Contains("Upload", StringComparison.OrdinalIgnoreCase) => "UPLOAD_IMAGE",
+                    var a when a.Contains("Bulk", StringComparison.OrdinalIgnoreCase) => "BULK_CREATE",
+                    _ => actionType
+                };
+
+                var bodyArg = context.ActionArguments.Values
+                    .FirstOrDefault(v => v != null && !(v is int) && !(v is string) && !(v is IFormFile) && !(v is IFormFileCollection));
+                if (bodyArg != null)
+                {
+                    var opts = new JsonSerializerOptions
+                    {
+                        WriteIndented = false,
+                        MaxDepth = 3 // Tránh serialize quá sâu
+                    };
+                    requestBodyJson = JsonSerializer.Serialize(bodyArg, opts);
+                    // Giới hạn độ dài để tránh log quá lớn
+                    if (requestBodyJson?.Length > 2000)
+                        requestBodyJson = requestBodyJson[..2000] + "...[truncated]";
+                }
+            }
+            catch { /* Bỏ qua nếu không serialize được */ }
+
             // Thực thi action
             var executedContext = await next();
 
-            // Chỉ ghi log nếu action thành công (2xx)
-            if (executedContext.Result is ObjectResult objResult && objResult.StatusCode.HasValue)
-            {
-                if (objResult.StatusCode < 200 || objResult.StatusCode >= 300)
-                    return;
+            // Kiểm tra kết quả có thành công không
+            bool isSuccess = false;
+            int newRecordId = recordId;
 
-                // Nếu là CREATE và recordId = 0, cố lấy ID từ response
-                if (actionType == "CREATE" && recordId == 0)
+            if (executedContext.Result is ObjectResult objResult)
+            {
+                isSuccess = objResult.StatusCode is null or >= 200 and < 300;
+
+                // Nếu là CREATE, lấy ID của record mới tạo từ response
+                if (isSuccess && actionType == "CREATE" && newRecordId == 0)
                 {
                     try
                     {
-                        var resultJson = JsonSerializer.Serialize(objResult.Value);
+                        var resultJson = JsonSerializer.Serialize(objResult.Value,
+                            new JsonSerializerOptions { MaxDepth = 5 });
                         using var doc = JsonDocument.Parse(resultJson);
                         var root = doc.RootElement;
-                        if (root.TryGetProperty("data", out var dataEl) && dataEl.TryGetProperty("id", out var idEl))
-                            recordId = idEl.GetInt32();
-                        else if (root.TryGetProperty("id", out var idEl2))
-                            recordId = idEl2.GetInt32();
+
+                        // Thử nhiều pattern để lấy ID
+                        if (root.TryGetProperty("id", out var idEl)) newRecordId = idEl.GetInt32();
+                        else if (root.TryGetProperty("Id", out var idEl2)) newRecordId = idEl2.GetInt32();
+                        else if (root.TryGetProperty("data", out var dataEl))
+                        {
+                            if (dataEl.TryGetProperty("id", out var dId)) newRecordId = dId.GetInt32();
+                            else if (dataEl.TryGetProperty("Id", out var dId2)) newRecordId = dId2.GetInt32();
+                        }
+                        else if (root.TryGetProperty("Data", out var dataEl2))
+                        {
+                            if (dataEl2.TryGetProperty("id", out var dId)) newRecordId = dId.GetInt32();
+                        }
                     }
                     catch { }
                 }
             }
-            else if (executedContext.Result is StatusCodeResult scr && (scr.StatusCode < 200 || scr.StatusCode >= 300))
+            else if (executedContext.Result is CreatedAtActionResult createdResult)
             {
-                return; // Không ghi log khi request thất bại
+                // CreatedAtActionResult = 201 Created - luôn thành công
+                isSuccess = true;
+                if (newRecordId == 0 && createdResult.RouteValues != null)
+                {
+                    if (createdResult.RouteValues.TryGetValue("id", out var routeId))
+                        int.TryParse(routeId?.ToString(), out newRecordId);
+                }
+                if (newRecordId == 0 && createdResult.Value != null)
+                {
+                    try
+                    {
+                        var json = JsonSerializer.Serialize(createdResult.Value, new JsonSerializerOptions { MaxDepth = 3 });
+                        using var doc = JsonDocument.Parse(json);
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("id", out var idEl)) newRecordId = idEl.GetInt32();
+                        else if (root.TryGetProperty("Id", out var idEl2)) newRecordId = idEl2.GetInt32();
+                    }
+                    catch { }
+                }
             }
+            else if (executedContext.Result is NoContentResult)
+            {
+                // 204 NoContent - DELETE thành công
+                isSuccess = true;
+            }
+            else if (executedContext.Result is StatusCodeResult scr)
+            {
+                isSuccess = scr.StatusCode is >= 200 and < 300;
+            }
+            else if (executedContext.Result == null && executedContext.Exception == null)
+            {
+                // Không có exception, không có result cụ thể -> coi là thành công
+                isSuccess = true;
+            }
+
+            // Chỉ ghi log nếu action thành công
+            if (!isSuccess) return;
+
+            // Tạo thông điệp mô tả
+            var finalAction = actionLabel ?? actionType;
 
             // Ghi nhật ký vào CSDL
             try
@@ -144,10 +223,10 @@ namespace HotelManagementApi.Filters
                 var log = new AuditLog
                 {
                     UserId    = userId,
-                    Action    = actionType,
+                    Action    = finalAction,
                     TableName = tableName,
-                    RecordId  = recordId,
-                    NewValue  = actionType != "DELETE" ? requestBodyJson : null,
+                    RecordId  = newRecordId,
+                    NewValue  = (finalAction != "DELETE") ? requestBodyJson : null,
                     OldValue  = null,
                     CreatedAt = DateTime.Now
                 };

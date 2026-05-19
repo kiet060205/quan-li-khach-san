@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace HotelManagementApi.Models;
@@ -18,6 +18,10 @@ public partial class BookingDetail
     public DateTime CheckOutDate { get; set; }
 
     public decimal PricePerNight { get; set; }
+
+    public DateTime? ActualCheckIn { get; set; }
+
+    public DateTime? ActualCheckOut { get; set; }
 
     public virtual Booking? Booking { get; set; }
 

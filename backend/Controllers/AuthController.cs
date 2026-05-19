@@ -57,11 +57,32 @@ namespace HotelManagementApi.Controllers
                 signingCredentials: creds
             );
 
+            var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
+
+            // Ghi audit log đăng nhập thành công
+            try
+            {
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    UserId    = user.Id,
+                    Action    = "LOGIN",
+                    TableName = "Hệ Thống",
+                    RecordId  = user.Id,
+                    NewValue  = System.Text.Json.JsonSerializer.Serialize(new { role = user.Role?.Name, email = user.Email }),
+                    CreatedAt = DateTime.Now
+                });
+                await _context.SaveChangesAsync();
+            }
+            catch { /* Không để lỗi log ảnh hưởng login */ }
+
             return Ok(new
             {
-                Token = new JwtSecurityTokenHandler().WriteToken(token),
-                Role = user.Role?.Name,
-                Message = "Đăng nhập thành công"
+                Token    = tokenString,
+                Role     = user.Role?.Name,
+                UserId   = user.Id,
+                FullName = user.FullName,
+                Email    = user.Email,
+                Message  = "Đăng nhập thành công"
             });
         }
     }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Card, Typography, Button, Space, Modal, Form, InputNumber, Select, message, Tag, Row, Col } from 'antd';
-import { PlusOutlined, DeleteOutlined, ReloadOutlined, CreditCardOutlined, DollarOutlined } from '@ant-design/icons';
+import { Table, Card, Typography, Button, Space, Modal, Form, Input, InputNumber, Select, message, Tag, Row, Col, Alert } from 'antd';
+import { PlusOutlined, DeleteOutlined, ReloadOutlined, CreditCardOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { paymentApi } from '../../../api/financeApi';
 import { useNotification } from '../../../context/notificationContext';
 import dayjs from 'dayjs';
@@ -35,7 +35,7 @@ const PaymentsPage = () => {
   useEffect(() => { fetchPayments(); }, []);
 
   const METHOD_ICON = {
-    Cash: '💵', Card: '💳', Transfer: '🏦', Online: '📱', Other: '🔁',
+    Cash: '💵', Card: '💳', Transfer: '🏦', Online: '📱', Momo: '🟣', Other: '🔁',
   };
 
   const columns = [
@@ -48,7 +48,20 @@ const PaymentsPage = () => {
     },
     {
       title: 'Phương Thức', dataIndex: 'paymentMethod', key: 'paymentMethod',
-      render: m => <Tag icon={<span>{METHOD_ICON[m] || '💳'}</span>} color="blue" style={{ borderRadius: 6 }}>{m}</Tag>
+      render: m => {
+        const isMomo = m === 'Momo';
+        return (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            background: isMomo ? '#fce4ec' : '#e6f4ff',
+            color: isMomo ? '#ae2070' : '#1677ff',
+            borderRadius: 6, padding: '3px 10px', fontWeight: 600, fontSize: 13,
+            border: isMomo ? '1px solid #f48fb1' : '1px solid #91caff',
+          }}>
+            {METHOD_ICON[m] || '💳'} {m}
+          </span>
+        );
+      }
     },
     { title: 'Mã Giao Dịch', dataIndex: 'transactionCode', key: 'transactionCode', render: t => t ? <Text code>{t}</Text> : '—' },
     {
@@ -128,14 +141,23 @@ const PaymentsPage = () => {
 
       {/* Method Stats */}
       <Row gutter={[12, 12]} style={{ marginBottom: 20 }}>
-        {Object.entries({ Cash: '💵', Card: '💳', Transfer: '🏦', Online: '📱' }).map(([method, icon]) => {
+        {Object.entries({ Cash: '💵', Card: '💳', Transfer: '🏦', Momo: '🟣', Online: '📱' }).map(([method, icon]) => {
           const total = payments.filter(p => p.paymentMethod === method).reduce((s, p) => s + (Number(p.amountPaid) || 0), 0);
           const count = payments.filter(p => p.paymentMethod === method).length;
+          const isMomo = method === 'Momo';
           return (
-            <Col xs={12} sm={6} key={method}>
-              <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }} styles={{ body: { padding: '14px 12px' } }}>
+            <Col xs={12} sm={isMomo ? 24 : 6} md={isMomo ? 6 : 6} key={method}>
+              <Card
+                style={{
+                  borderRadius: 12, textAlign: 'center',
+                  border: isMomo ? '1.5px solid #f48fb1' : 'none',
+                  boxShadow: isMomo ? '0 4px 16px rgba(174,32,112,0.12)' : '0 2px 8px rgba(0,0,0,0.06)',
+                  background: isMomo ? '#fce4ec' : '#fff',
+                }}
+                styles={{ body: { padding: '14px 12px' } }}
+              >
                 <div style={{ fontSize: 28 }}>{icon}</div>
-                <Text strong style={{ fontSize: 13, display: 'block' }}>{method}</Text>
+                <Text strong style={{ fontSize: 13, display: 'block', color: isMomo ? '#ae2070' : undefined }}>{method}</Text>
                 <Text type="secondary" style={{ fontSize: 11 }}>{count} lần · {Number(total).toLocaleString('vi-VN')}đ</Text>
               </Card>
             </Col>
@@ -147,24 +169,43 @@ const PaymentsPage = () => {
         <Table columns={columns} dataSource={payments} rowKey="id" loading={loading} pagination={{ pageSize: 10 }} scroll={{ x: 1100 }} style={{ borderRadius: 16, overflow: 'hidden' }} />
       </Card>
 
-      <Modal title="Ghi Nhận Thanh Toán Mới" open={isModalVisible} onCancel={() => setIsModalVisible(false)} onOk={() => form.submit()}>
+      <Modal
+        title={<span><CreditCardOutlined style={{ color: '#1677ff', marginRight: 8 }} />Ghi Nhận Thanh Toán Mới</span>}
+        open={isModalVisible}
+        onCancel={() => setIsModalVisible(false)}
+        onOk={() => form.submit()}
+        okText="✓ Ghi Nhận"
+        okButtonProps={{ style: { background: '#1677ff' } }}
+        cancelText="Hủy"
+      >
+        <Alert
+          type="info" showIcon
+          message={'Nhập ID hóa đơn, số tiền và phương thức. Hệ thống sẽ tự cập nhật trạng thái hóa đơn sang "Đã thanh toán" nếu đủ số tiền.'}
+          style={{ marginBottom: 16 }}
+        />
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
-          <Form.Item name="invoiceId" label="ID Hóa Đơn" rules={[{ required: true }]}>
-            <InputNumber style={{ width: '100%' }} placeholder="Nhập ID hóa đơn cần thanh toán" />
+          <Form.Item name="invoiceId" label="ID Hóa Đơn" rules={[{ required: true, message: 'Vui lòng nhập ID hóa đơn!' }]}>
+            <InputNumber style={{ width: '100%' }} placeholder="Nhập ID hóa đơn cần thanh toán (VD: 14)" />
           </Form.Item>
-          <Form.Item name="amountPaid" label="Số Tiền Thanh Toán (VNĐ)" rules={[{ required: true }]}>
-            <InputNumber style={{ width: '100%' }} min={0} formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
+          <Form.Item name="amountPaid" label="Số Tiền Thanh Toán (VNĐ)" rules={[{ required: true, message: 'Vui lòng nhập số tiền!' }]}>
+            <InputNumber
+              style={{ width: '100%' }} min={0}
+              formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+              parser={v => v.replace(/,/g, '')}
+              placeholder="VD: 770000"
+            />
           </Form.Item>
-          <Form.Item name="paymentMethod" label="Phương Thức Thanh Toán" rules={[{ required: true }]}>
-            <Select>
+          <Form.Item name="paymentMethod" label="Phương Thức Thanh Toán" rules={[{ required: true, message: 'Vui lòng chọn phương thức!' }]}>
+            <Select placeholder="Chọn phương thức">
               <Option value="Cash">Tiền mặt 💵</Option>
               <Option value="Card">Thẻ tín/ghi nợ 💳</Option>
               <Option value="Transfer">Chuyển khoản 🏦</Option>
-              <Option value="Online">Ví điện tử / Online 📱</Option>
+              <Option value="Momo">Ví MoMo 🟣</Option>
+              <Option value="Online">Ví điện tử khác 📱</Option>
             </Select>
           </Form.Item>
           <Form.Item name="transactionCode" label="Mã Giao Dịch (nếu có)">
-            <InputNumber style={{ width: '100%' }} placeholder="VD: TXN20260409001" />
+            <Input placeholder="VD: MOM0111 hoặc TXN20260409001" allowClear />
           </Form.Item>
         </Form>
       </Modal>

@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Button, Space, Modal, Form, Input, message, Tag, Row, Col, Card, InputNumber, Tooltip } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, EnvironmentOutlined, CompassOutlined } from '@ant-design/icons';
+import { Typography, Button, Space, Modal, Form, Input, message, Tag, Row, Col, Card, InputNumber, Tooltip, Upload } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, EnvironmentOutlined, CompassOutlined, UploadOutlined, PictureOutlined } from '@ant-design/icons';
 import { attractionApi } from '../../../api/marketingApi';
 import { useNotification } from '../../../context/notificationContext';
+import { uploadToCloudinary } from '../../../utils/cloudinaryUpload';
+
+const API_BASE = 'http://localhost:5262';
 
 const { Title, Text } = Typography;
 
@@ -26,6 +29,7 @@ const AttractionsPage = () => {
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [currentMapLink, setCurrentMapLink] = useState('');
   const [editingAttraction, setEditingAttraction] = useState(null);
+  const [uploadingId, setUploadingId] = useState(null);
   const [form] = Form.useForm();
   const { addNotification } = useNotification();
 
@@ -33,9 +37,12 @@ const AttractionsPage = () => {
     setLoading(true);
     try {
       const res = await attractionApi.getAllAttractions();
-      const data = Array.isArray(res.data) ? res.data : [];
-      setAttractions(data.length > 0 ? data : MOCK_ATTRACTIONS);
-    } catch { setAttractions(MOCK_ATTRACTIONS); }
+      setAttractions(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Lỗi tải địa điểm:', err);
+      message.error('Không thể tải danh sách địa điểm!');
+      setAttractions([]);
+    }
     finally { setLoading(false); }
   };
 
@@ -51,29 +58,49 @@ const AttractionsPage = () => {
 
   const handleEdit = (record) => { setEditingAttraction(record); form.setFieldsValue({ ...record }); setIsModalVisible(true); };
   const handleDelete = (id) => {
-    Modal.confirm({ title: 'Xóa địa điểm này?', okText: 'Xóa', okType: 'danger', cancelText: 'Hủy',
+    Modal.confirm({ title: 'Xoa dia diem nay?', okText: 'Xoa', okType: 'danger', cancelText: 'Huy',
       onOk: async () => {
         try { await attractionApi.deleteAttraction(id); } catch {}
         setAttractions(prev => prev.filter(a => a.id !== id));
-        message.success('Đã xóa!');
+        message.success('Da xoa!');
       }
     });
   };
   const handleSubmit = async (values) => {
     try {
       if (editingAttraction) {
-        await attractionApi.updateAttraction(editingAttraction.id, { ...editingAttraction, ...values }).catch(() => {});
-        setAttractions(prev => prev.map(a => a.id === editingAttraction.id ? { ...a, ...values } : a));
-        addNotification('Cập nhật Địa Điểm', `Đã cập nhật: ${values.name}`, 'info');
+        await attractionApi.updateAttraction(editingAttraction.id, { ...editingAttraction, ...values });
+        message.success('Cap nhat thanh cong!');
+        addNotification('Cap nhat Dia Diem', `Da cap nhat: ${values.name}`, 'info');
       } else {
-        const newItem = { id: Date.now(), ...values };
-        await attractionApi.createAttraction(values).catch(() => {});
-        setAttractions(prev => [newItem, ...prev]);
-        addNotification('Địa Điểm Mới', `Đã thêm: ${values.name}`, 'success');
+        await attractionApi.createAttraction(values);
+        message.success('Them thanh cong!');
+        addNotification('Dia Diem Moi', `Da them: ${values.name}`, 'success');
       }
-      message.success(editingAttraction ? 'Cập nhật thành công!' : 'Thêm thành công!');
       setIsModalVisible(false);
-    } catch { message.error('Lỗi lưu dữ liệu!'); }
+      fetchAttractions(); // Luon fetch lai de lay data moi nhat
+    } catch { message.error('Loi luu du lieu!'); }
+  };
+
+  const handleUploadImage = async (attractionId, file) => {
+    setUploadingId(attractionId);
+    try {
+      message.loading({ content: 'Dang upload len Cloudinary...', key: 'img_upload' });
+      // 1. Upload len Cloudinary
+      const cloudinaryUrl = await uploadToCloudinary(file, 'hotel/attractions');
+      // 2. Luu URL vao DB
+      await attractionApi.updateImageUrl(attractionId, cloudinaryUrl);
+      message.success({ content: 'Upload anh thanh cong!', key: 'img_upload' });
+      // Cap nhat UI
+      setAttractions(prev => prev.map(a =>
+        a.id === attractionId ? { ...a, imageUrl: cloudinaryUrl } : a
+      ));
+    } catch (err) {
+      console.error('Upload error:', err);
+      message.error({ content: 'Loi upload: ' + (err.message || 'Thu lai sau'), key: 'img_upload' });
+    } finally {
+      setUploadingId(null);
+    }
   };
 
   const extractSrc = (html) => {
@@ -112,11 +139,44 @@ const AttractionsPage = () => {
               style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.07)', overflow: 'hidden', height: '100%' }}
               styles={{ body: { padding: 0 } }}
             >
-              <div style={{ background: 'linear-gradient(135deg, #e6fffb, #b5f5ec)', padding: '20px 20px 16px', borderBottom: '1px solid #f0f0f0' }}>
-                <div style={{ fontSize: 36, marginBottom: 8 }}>{CATEGORY_ICONS[item.category] || '📍'}</div>
+              <div style={{ position: 'relative', height: 140, overflow: 'hidden', background: '#f0f9ff' }}>
+                {item.imageUrl
+                  ? <img
+                      src={item.imageUrl}
+                      alt={item.name}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #e6fffb, #b5f5ec)' }}>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 36, marginBottom: 4 }}>{CATEGORY_ICONS[item.category] || '\uD83D\uDCCD'}</div>
+                        <div style={{ fontSize: 11, color: '#999' }}>Chua co anh</div>
+                      </div>
+                    </div>
+                }
+                {/* Upload button overlay */}
+                <Upload
+                  showUploadList={false}
+                  beforeUpload={(file) => { handleUploadImage(item.id, file); return false; }}
+                  accept="image/*"
+                >
+                  <Button
+                    size="small"
+                    icon={<UploadOutlined />}
+                    loading={uploadingId === item.id}
+                    style={{
+                      position: 'absolute', top: 8, right: 8,
+                      background: 'rgba(0,0,0,0.55)', color: '#fff',
+                      border: 'none', borderRadius: 6, fontSize: 11,
+                    }}
+                  >
+                    {item.imageUrl ? 'Doi anh' : 'Upload'}
+                  </Button>
+                </Upload>
+              </div>
+              <div style={{ background: 'linear-gradient(135deg, #e6fffb, #b5f5ec)', padding: '12px 20px 10px', borderBottom: '1px solid #f0f0f0' }}>
                 <Text strong style={{ fontSize: 15 }}>{item.name}</Text>
                 <br />
-                <Tag color="cyan" style={{ marginTop: 6, fontSize: 11 }}>{item.category || 'Địa điểm'}</Tag>
+                <Tag color="cyan" style={{ marginTop: 6, fontSize: 11 }}>{item.category || 'Dia diem'}</Tag>
               </div>
               <div style={{ padding: '14px 20px' }}>
                 <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 10, lineHeight: 1.6 }}>{item.description}</Text>

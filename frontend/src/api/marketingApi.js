@@ -5,7 +5,9 @@ export const articleApi = {
   getArticleById: (id) => axiosClient.get(`/Articles/${id}`),
   createArticle: (data) => axiosClient.post('/Articles', data),
   updateArticle: (id, data) => axiosClient.put(`/Articles/${id}`, data),
-  deleteArticle: (id) => axiosClient.delete(`/Articles/${id}`)
+  deleteArticle: (id) => axiosClient.delete(`/Articles/${id}`),
+  // Nhan cloudinaryUrl sau khi da upload len Cloudinary, luu vao DB
+  updateThumbnailUrl: (id, url) => axiosClient.patch(`/Articles/${id}/thumbnail`, { url }),
 };
 
 export const attractionApi = {
@@ -13,8 +15,12 @@ export const attractionApi = {
   getAttractionById: (id) => axiosClient.get(`/Attractions/${id}`),
   createAttraction: (data) => axiosClient.post('/Attractions', data),
   updateAttraction: (id, data) => axiosClient.put(`/Attractions/${id}`, data),
-  deleteAttraction: (id) => axiosClient.delete(`/Attractions/${id}`)
+  deleteAttraction: (id) => axiosClient.delete(`/Attractions/${id}`),
+  // Nhan cloudinaryUrl sau khi da upload len Cloudinary, luu vao DB
+  updateImageUrl: (id, url) => axiosClient.patch(`/Attractions/${id}/image`, { url }),
 };
+
+
 
 export const voucherApi = {
   getAllVouchers: () => axiosClient.get('/Vouchers'),

@@ -18,6 +18,8 @@ const navLinks = [
   { label: 'Dịch Vụ', to: '/services' },
   { label: 'Khuyến Mãi', to: '/promotions' },
   { label: 'Đánh Giá', to: '/reviews' },
+  { label: 'Tin Tức', to: '/news' },
+  { label: 'Địa Điểm', to: '/attractions' },
 ];
 
 export default function WebsiteLayout() {
@@ -199,7 +201,9 @@ export default function WebsiteLayout() {
                 { label: 'Phòng & Villa', to: '/rooms' },
                 { label: 'Dịch Vụ', to: '/services' },
                 { label: 'Khuyến Mãi & Voucher', to: '/promotions' },
-              { label: 'Đánh Giá Khách Hàng', to: '/reviews' },
+                { label: 'Đánh Giá Khách Hàng', to: '/reviews' },
+                { label: 'Tin Tức & Bài Viết', to: '/news' },
+                { label: 'Địa Điểm Lân Cận', to: '/attractions' },
               ].map(l => (
                 <Link key={l.to} to={l.to} style={{ display: 'block', color: 'rgba(255,255,255,0.6)', textDecoration: 'none', fontSize: 14, marginBottom: 10, transition: 'color 0.2s' }}
                   onMouseEnter={e => e.target.style.color = GOLD} onMouseLeave={e => e.target.style.color = 'rgba(255,255,255,0.6)'}>

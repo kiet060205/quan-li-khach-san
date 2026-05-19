@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace HotelManagementApi.Models;
@@ -20,6 +20,8 @@ public partial class Invoice
     public decimal? FinalTotal { get; set; }
 
     public string? Status { get; set; }
+
+    public DateTime? CreatedAt { get; set; }
 
     public virtual Booking? Booking { get; set; }
 

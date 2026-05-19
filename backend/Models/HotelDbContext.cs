@@ -67,6 +67,8 @@ public partial class HotelDbContext : DbContext
 
     public virtual DbSet<Notification> Notifications { get; set; }
 
+    public virtual DbSet<RoleDashboardPeriodState> RoleDashboardPeriodStates { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Amenity>(entity =>
@@ -89,7 +91,11 @@ public partial class HotelDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.AuthorId).HasColumnName("author_id");
             entity.Property(e => e.CategoryId).HasColumnName("category_id");
+            entity.Property(e => e.Summary).HasColumnName("summary");
             entity.Property(e => e.Content).HasColumnName("content");
+            entity.Property(e => e.IsPublished)
+                .HasDefaultValue(false)
+                .HasColumnName("is_published");
             entity.Property(e => e.PublishedAt)
                 .HasDefaultValueSql("(getdate())")
                 .HasColumnType("datetime")
@@ -108,6 +114,7 @@ public partial class HotelDbContext : DbContext
                 .HasForeignKey(d => d.CategoryId)
                 .HasConstraintName("FK__Articles__catego__5224328E");
         });
+
 
         modelBuilder.Entity<ArticleCategory>(entity =>
         {
@@ -130,6 +137,7 @@ public partial class HotelDbContext : DbContext
             entity.Property(e => e.DistanceKm)
                 .HasColumnType("decimal(5, 2)")
                 .HasColumnName("distance_km");
+            entity.Property(e => e.ImageUrl).HasColumnName("image_url");
             entity.Property(e => e.MapEmbedLink).HasColumnName("map_embed_link");
             entity.Property(e => e.Name)
                 .HasMaxLength(255)
@@ -193,6 +201,7 @@ public partial class HotelDbContext : DbContext
                 .HasColumnName("status");
             entity.Property(e => e.UserId).HasColumnName("user_id");
             entity.Property(e => e.VoucherId).HasColumnName("voucher_id");
+            entity.Property(e => e.CreatedAt).HasColumnType("datetime").HasColumnName("created_at");
 
             entity.HasOne(d => d.User).WithMany(p => p.Bookings)
                 .HasForeignKey(d => d.UserId)
@@ -222,6 +231,8 @@ public partial class HotelDbContext : DbContext
                 .HasColumnName("price_per_night");
             entity.Property(e => e.RoomId).HasColumnName("room_id");
             entity.Property(e => e.RoomTypeId).HasColumnName("room_type_id");
+            entity.Property(e => e.ActualCheckIn).HasColumnType("datetime").HasColumnName("actual_check_in");
+            entity.Property(e => e.ActualCheckOut).HasColumnType("datetime").HasColumnName("actual_check_out");
 
             entity.HasOne(d => d.Booking).WithMany(p => p.BookingDetails)
                 .HasForeignKey(d => d.BookingId)
@@ -266,6 +277,10 @@ public partial class HotelDbContext : DbContext
                 .HasDefaultValue(0m)
                 .HasColumnType("decimal(18, 2)")
                 .HasColumnName("total_service_amount");
+
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("datetime")
+                .HasColumnName("created_at");
 
             entity.HasOne(d => d.Booking).WithMany(p => p.Invoices)
                 .HasForeignKey(d => d.BookingId)
@@ -502,6 +517,10 @@ public partial class HotelDbContext : DbContext
                 .HasDefaultValue("Available")
                 .HasColumnName("status");
 
+            entity.Property(e => e.CleaningStatus)
+                .HasMaxLength(50)
+                .HasColumnName("cleaning_status");
+
             entity.HasOne(d => d.RoomType).WithMany(p => p.Rooms)
                 .HasForeignKey(d => d.RoomTypeId)
                 .HasConstraintName("FK__Rooms__room_type__151B244E");
@@ -645,6 +664,10 @@ public partial class HotelDbContext : DbContext
                 .HasDefaultValue(true)
                 .HasColumnName("status");
 
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("datetime")
+                .HasColumnName("created_at");
+
             entity.HasOne(d => d.Membership).WithMany(p => p.Users)
                 .HasForeignKey(d => d.MembershipId)
                 .HasConstraintName("FK__Users__membershi__18EBB532");
@@ -683,6 +706,44 @@ public partial class HotelDbContext : DbContext
             entity.Property(e => e.ValidTo)
                 .HasColumnType("datetime")
                 .HasColumnName("valid_to");
+        });
+
+        modelBuilder.Entity<RoleDashboardPeriodState>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_Role_Dashboard_Period_States");
+
+            entity.ToTable("Role_Dashboard_Period_States");
+
+            entity.Property(e => e.Id).HasColumnName("id").UseIdentityColumn();
+            entity.Property(e => e.RoleId).HasColumnName("role_id");
+            entity.Property(e => e.RoleName).HasMaxLength(100).HasColumnName("role_name");
+            entity.Property(e => e.DashboardCode).HasMaxLength(100).HasColumnName("dashboard_code");
+            entity.Property(e => e.DashboardTitle).HasMaxLength(255).HasColumnName("dashboard_title");
+            entity.Property(e => e.PeriodType).HasMaxLength(20).HasColumnName("period_type");
+            entity.Property(e => e.PeriodKey).HasMaxLength(30).HasColumnName("period_key");
+            entity.Property(e => e.PeriodStart).HasColumnName("period_start");
+            entity.Property(e => e.PeriodEnd).HasColumnName("period_end");
+            entity.Property(e => e.DashboardJson).HasColumnName("dashboard_json");
+            entity.Property(e => e.ComparisonJson).HasColumnName("comparison_json");
+            entity.Property(e => e.Status).HasMaxLength(20).HasColumnName("status").HasDefaultValue("OPEN");
+            entity.Property(e => e.IsCurrent).HasColumnName("is_current").HasDefaultValue(false);
+            entity.Property(e => e.LastEventType).HasMaxLength(100).HasColumnName("last_event_type");
+            entity.Property(e => e.LastEventSource).HasMaxLength(100).HasColumnName("last_event_source");
+            entity.Property(e => e.LastEventRefId).HasColumnName("last_event_ref_id");
+            entity.Property(e => e.Version).HasColumnName("version").HasDefaultValue(1);
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("SYSUTCDATETIME()");
+            entity.Property(e => e.ClosedAt).HasColumnName("closed_at");
+            entity.Property(e => e.UpdatedBy).HasColumnName("updated_by");
+
+            entity.HasOne(d => d.Role).WithMany()
+                .HasForeignKey(d => d.RoleId)
+                .HasConstraintName("FK_RoleDashboardPeriod_Roles");
+
+            entity.HasOne(d => d.UpdatedByUser).WithMany()
+                .HasForeignKey(d => d.UpdatedBy)
+                .HasConstraintName("FK_RoleDashboardPeriod_UpdatedBy")
+                .IsRequired(false);
         });
 
         OnModelCreatingPartial(modelBuilder);

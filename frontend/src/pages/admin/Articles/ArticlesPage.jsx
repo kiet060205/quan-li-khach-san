@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Table, Card, Typography, Button, Space, Modal, Form, Input, message, Tag, Switch, Avatar, Tooltip, Row, Col } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, ReadOutlined, EyeOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { Table, Card, Typography, Button, Space, Modal, Form, Input, message, Tag, Switch, Avatar, Tooltip, Upload } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, ReadOutlined, EyeOutlined, CheckCircleOutlined, ClockCircleOutlined, UploadOutlined, PictureOutlined } from '@ant-design/icons';
 import { articleApi } from '../../../api/marketingApi';
 import { useNotification } from '../../../context/notificationContext';
+import { uploadToCloudinary } from '../../../utils/cloudinaryUpload';
 import Quill from 'quill';
 import 'quill/dist/quill.snow.css';
+
+const API_BASE = 'http://localhost:5262';
 
 const CustomQuillEditor = ({ value, onChange }) => {
   const containerRef = useRef(null);
@@ -59,21 +62,21 @@ const ArticlesPage = () => {
   const [loading, setLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingArticle, setEditingArticle] = useState(null);
+  const [uploadingId, setUploadingId] = useState(null);
   const [form] = Form.useForm();
   const { addNotification } = useNotification();
+  const fileInputRef = useRef(null);
+  const [uploadTargetId, setUploadTargetId] = useState(null);
 
   const fetchArticles = async () => {
     setLoading(true);
     try {
       const res = await articleApi.getAllArticles();
-      setArticles(res.data);
+      setArticles(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
-      console.error(error);
-      setArticles([
-        { id: 1, title: 'Khai trương bể bơi vô cực', summary: 'Bể bơi infinity với view ngắm toàn cảnh thành phố và biển.', content: '<p><strong>Hợi tụ tại bể bơi mới!</strong></p>', isPublished: true, createdAt: '2026-04-01', author: { name: 'Admin' } },
-        { id: 2, title: 'Chương trình ẩm thực cuối tuần', summary: 'Giảm 20% cho khách đặt phòng trước 3 ngày - menu hải sản tươi sống.', content: '<p>Chương trình ưu đãi cuối tuần!</p>', isPublished: false, createdAt: '2026-04-05', author: { name: 'Marketing' } },
-        { id: 3, title: 'Spa & Wellness Mưa He 2026', summary: 'Gói massage thư giãn cho cặp đôi với giá ưu đãi mua 1 tặng 1.', content: '<p>Trải nghiệm spa cao cấp!</p>', isPublished: true, createdAt: '2026-04-08', author: { name: 'Spa Team' } },
-      ]);
+      console.error('Lỗi tải bài viết:', error);
+      message.error('Không thể tải danh sách bài viết!');
+      setArticles([]);
     } finally {
       setLoading(false);
     }
@@ -84,21 +87,70 @@ const ArticlesPage = () => {
   }, []);
 
   const handleTogglePublish = async (record) => {
+    const updated = { ...record, isPublished: !record.isPublished };
+    setArticles(prev => prev.map(a => a.id === record.id ? updated : a));
     try {
-      const updated = { ...record, isPublished: !record.isPublished };
       await articleApi.updateArticle(record.id, updated);
-      setArticles(prev => prev.map(a => a.id === record.id ? updated : a));
-      message.success(updated.isPublished ? 'Xuất bản thành công!' : 'Chọn về bản nháp!');
+      message.success(updated.isPublished ? 'Da xuat ban bai viet!' : 'Da chuyen ve ban nhap!');
     } catch {
-      // Optimistic update even if API fails
-      setArticles(prev => prev.map(a => a.id === record.id ? { ...a, isPublished: !a.isPublished } : a));
-      message.success(record.isPublished ? 'Chọn về bản nháp!' : 'Xuất bản thành công!');
+      setArticles(prev => prev.map(a => a.id === record.id ? record : a));
+      message.error('Khong the cap nhat trang thai!');
+    }
+  };
+
+  const handleUploadThumbnail = async (articleId, file) => {
+    setUploadingId(articleId);
+    try {
+      message.loading({ content: 'Dang upload len Cloudinary...', key: 'upload' });
+      // 1. Upload len Cloudinary
+      const cloudinaryUrl = await uploadToCloudinary(file, 'hotel/articles');
+      // 2. Luu URL vao DB qua backend
+      await articleApi.updateThumbnailUrl(articleId, cloudinaryUrl);
+      message.success({ content: 'Upload anh bia thanh cong!', key: 'upload' });
+      // Cap nhat UI
+      setArticles(prev => prev.map(a =>
+        a.id === articleId ? { ...a, thumbnailUrl: cloudinaryUrl } : a
+      ));
+    } catch (err) {
+      console.error('Upload error:', err);
+      message.error({ content: 'Loi upload: ' + (err.message || 'Thu lai sau'), key: 'upload' });
+    } finally {
+      setUploadingId(null);
     }
   };
 
   const columns = [
     {
-      title: 'Tác Giả', key: 'author',
+      title: 'Anh Bia', key: 'thumbnail', width: 100,
+      render: (_, r) => {
+        const src = r.thumbnailUrl || null;
+        return (
+          <div style={{ textAlign: 'center' }}>
+            {src
+              ? <img src={src} alt="thumb" style={{ width: 70, height: 50, objectFit: 'cover', borderRadius: 6, display: 'block', margin: '0 auto 4px', boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }} />
+              : <div style={{ width: 70, height: 50, background: '#f5f5f5', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 4px', border: '1px dashed #d9d9d9' }}><PictureOutlined style={{ color: '#bbb', fontSize: 18 }} /></div>
+            }
+            <Upload
+              showUploadList={false}
+              beforeUpload={(file) => { handleUploadThumbnail(r.id, file); return false; }}
+              accept="image/*"
+            >
+              <Button
+                size="small"
+                icon={<UploadOutlined />}
+                loading={uploadingId === r.id}
+                style={{ fontSize: 10, padding: '1px 6px', marginTop: 2 }}
+              >
+                {src ? 'Doi anh' : 'Upload'}
+              </Button>
+            </Upload>
+          </div>
+        );
+      }
+    },
+
+    {
+      title: 'Tac Gia', key: 'author',
       render: (_, r) => (
         <Space>
           <Avatar src={`https://api.dicebear.com/7.x/notionists/svg?seed=${r.author?.name || 'admin'}`} size={36} />
@@ -108,24 +160,24 @@ const ArticlesPage = () => {
       width: 120,
     },
     {
-      title: 'Tiêu Đề & Tóm Tắt', key: 'content',
+      title: 'Tieu De & Tom Tat', key: 'content',
       render: (_, r) => (
         <div>
           <Text strong style={{ fontSize: 14 }}>{r.title}</Text>
           <br />
-          <Text type="secondary" style={{ fontSize: 12 }}>{r.summary}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{r.summary || '(Chua co tom tat)'}</Text>
         </div>
       )
     },
     {
-      title: 'Ngày Viết', dataIndex: 'createdAt', key: 'createdAt',
+      title: 'Ngay Viet', dataIndex: 'publishedAt', key: 'publishedAt',
       render: v => v ? new Date(v).toLocaleDateString('vi-VN') : '—',
       width: 110,
     },
     {
-      title: 'Xuất Bản', key: 'isPublished',
+      title: 'Xuat Ban', key: 'isPublished',
       render: (_, record) => (
-        <Tooltip title={record.isPublished ? 'Click để ẩn' : 'Click để xuất bản'}>
+        <Tooltip title={record.isPublished ? 'Click de an' : 'Click de xuat ban'}>
           <Switch
             checked={record.isPublished}
             checkedChildren={<CheckCircleOutlined />}
@@ -137,7 +189,7 @@ const ArticlesPage = () => {
       width: 100,
     },
     {
-      title: 'Thao Tác', key: 'action',
+      title: 'Thao Tac', key: 'action',
       render: (_, record) => (
         <Space>
           <Button type="text" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
@@ -185,12 +237,9 @@ const ArticlesPage = () => {
       }
       setIsModalVisible(false);
       fetchArticles();
-    } catch {
-      // Optimistic add for demo
-      const newArticle = { id: Date.now(), ...values, isPublished: false, createdAt: new Date().toISOString(), author: { name: 'Admin' } };
-      setArticles(prev => editingArticle ? prev.map(a => a.id === editingArticle.id ? { ...a, ...values } : a) : [newArticle, ...prev]);
-      message.success(editingArticle ? 'Cập nhật thành công!' : 'Tạo bản nháp thành công!');
-      setIsModalVisible(false);
+    } catch (err) {
+      console.error('Lỗi lưu bài viết:', err);
+      message.error('Lỗi khi lưu bài viết. Vui lòng thử lại!');
     }
   };
 

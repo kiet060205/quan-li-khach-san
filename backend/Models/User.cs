@@ -21,6 +21,8 @@ public partial class User
 
     public bool? Status { get; set; }
 
+    public DateTime? CreatedAt { get; set; }
+
     public virtual ICollection<Article> Articles { get; set; } = new List<Article>();
 
     public virtual ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();

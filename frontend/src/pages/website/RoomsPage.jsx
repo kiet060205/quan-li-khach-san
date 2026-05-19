@@ -57,6 +57,18 @@ export default function RoomsPage() {
     if (user) setForm(f => ({ ...f, guestName: user.name }));
   }, [user]);
 
+  // Auto-mo booking modal khi co ?book=id (tu trang chi tiet phong)
+  useEffect(() => {
+    const bookId = searchParams.get('book');
+    if (bookId && roomTypes.length > 0) {
+      const target = roomTypes.find(rt => String(rt.id) === String(bookId));
+      if (target) {
+        setBookModal(target);
+        setBookStep(1);
+      }
+    }
+  }, [searchParams, roomTypes]);
+
   const getPrimaryImage = (rt) => {
     const primary = rt.roomImages?.find(i => i.isPrimary) || rt.roomImages?.[0];
     if (primary?.imageUrl) {
@@ -336,15 +348,26 @@ export default function RoomsPage() {
                         <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 2 }}>Giá từ</div>
                         <div style={{ fontSize: 24, fontWeight: 800, color: GOLD }}>{(rt.basePrice || 0).toLocaleString('vi-VN')} <span style={{ fontSize: 14, fontWeight: 500, color: '#9ca3af' }}>₫/đêm</span></div>
                       </div>
-                      <button onClick={() => handleBook(rt)} disabled={!isAvailable}
-                        style={{
-                          background: isAvailable ? `linear-gradient(135deg, ${GOLD}, #E8C96B)` : '#e5e7eb',
-                          border: 'none', borderRadius: 10, padding: '12px 24px',
-                          color: isAvailable ? DARK : '#9ca3af', fontWeight: 700, fontSize: 14, cursor: isAvailable ? 'pointer' : 'not-allowed',
-                          boxShadow: isAvailable ? '0 4px 14px rgba(201,168,76,0.35)' : 'none',
-                        }}>
-                        {isAvailable ? 'Đặt Phòng' : 'Hết Phòng'}
-                      </button>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => window.open('/rooms/' + rt.id, '_blank')}
+                          style={{
+                            background: '#fff', border: `1.5px solid ${GOLD}`, borderRadius: 10,
+                            padding: '10px 14px', color: GOLD, fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                          }}
+                        >
+                          👁 Chi Tiết
+                        </button>
+                        <button onClick={() => handleBook(rt)} disabled={!isAvailable}
+                          style={{
+                            background: isAvailable ? `linear-gradient(135deg, ${GOLD}, #E8C96B)` : '#e5e7eb',
+                            border: 'none', borderRadius: 10, padding: '12px 18px',
+                            color: isAvailable ? DARK : '#9ca3af', fontWeight: 700, fontSize: 13, cursor: isAvailable ? 'pointer' : 'not-allowed',
+                            boxShadow: isAvailable ? '0 4px 14px rgba(201,168,76,0.35)' : 'none',
+                          }}>
+                          {isAvailable ? 'Đặt Phòng' : 'Hết Phòng'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -592,4 +615,3 @@ export default function RoomsPage() {
     </div>
   );
 }
-

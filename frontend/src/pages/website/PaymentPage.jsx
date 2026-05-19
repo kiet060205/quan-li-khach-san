@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { message, Modal } from 'antd';
+import React, { useEffect, useState, useCallback } from 'react';
+import { message, Modal, Spin } from 'antd';
 import { useAuthStore } from '../../store/authStore';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { bookingApi } from '../../api/bookingApi';
 import axiosClient from '../../api/axiosClient';
 
@@ -21,11 +21,14 @@ const statusMap = {
   Cancelled: { label: 'Đã Hủy', color: '#ef4444', bg: '#fef2f2', icon: <CloseCircleOutlined /> },
 };
 
+const MOMO_PINK = '#ae2070';
+const MOMO_LIGHT = '#fce4ec';
+
 const payMethods = [
   { key: 'cash', label: 'Tiền Mặt', icon: '💵', desc: 'Thanh toán tại quầy lễ tân' },
   { key: 'bank', label: 'Chuyển Khoản', icon: '🏦', desc: 'Chuyển khoản qua ngân hàng' },
   { key: 'card', label: 'Thẻ Tín Dụng', icon: '💳', desc: 'Visa, Mastercard, JCB' },
-  { key: 'momo', label: 'Ví MoMo', icon: '📱', desc: 'Thanh toán qua ví điện tử' },
+  { key: 'momo', label: 'Ví MoMo', icon: '🟣', desc: 'Quét mã QR qua app MoMo' },
 ];
 
 export default function PaymentPage() {
@@ -37,8 +40,11 @@ export default function PaymentPage() {
   const [payModal, setPayModal] = useState(false);
   const [payMethod, setPayMethod] = useState('cash');
   const [paying, setPaying] = useState(false);
+  const [momoSuccessModal, setMomoSuccessModal] = useState(false);
+  const [momoResult, setMomoResult] = useState(null);
   const { token, user } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (!token) {
@@ -70,6 +76,69 @@ export default function PaymentPage() {
     }).finally(() => setLoading(false));
   }, [token, user?.id]);
 
+  // ─── Xử lý khi MoMo redirect về ───────────────────────────────────────────
+  // MoMo sandbox redirect về với params: partnerCode=MOMO&orderId=...&resultCode=0&amount=...&transId=...
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    // MoMo dùng 'orderId' (KHÔNG phải 'momoOrderId')
+    const orderId     = params.get('orderId');
+    const partnerCode = params.get('partnerCode');
+    const resultCode  = params.get('resultCode');
+
+    // Chỉ xử lý nếu là redirect từ MoMo (orderId bắt đầu bằng "MOMO")
+    if (!orderId || !orderId.startsWith('MOMO')) return;
+
+    console.log('[MoMo Return]', { orderId, partnerCode, resultCode });
+
+    // Xóa query params khỏi URL ngay lập tức
+    navigate('/my-bookings', { replace: true });
+
+    const transId = params.get('transId') || '';
+    const amount  = params.get('amount')  || '0';
+    const rcCode  = parseInt(resultCode ?? '0');
+
+    // resultCode=0 là thành công
+    if (rcCode !== 0) {
+      message.error(`Thanh toán MoMo thất bại (mã lỗi: ${rcCode})`);
+      return;
+    }
+
+    // Gọi backend /api/momo/confirm để tạo Payment record và cập nhật Invoice
+    axiosClient.post('/momo/confirm', {
+      orderId,
+      resultCode: rcCode,
+      amount:     parseFloat(amount),
+      transId,
+    }).then(res => {
+      if (res.data?.success) {
+        setMomoResult(res.data);
+        setMomoSuccessModal(true);
+        setActiveTab('invoices');
+        // Reload danh sách invoice của user
+        if (user?.id) {
+          bookingApi.getByUser(user.id).then(bRes => {
+            const bks = Array.isArray(bRes.data) ? bRes.data : [];
+            setBookings(bks);
+            reloadInvoices(bks);
+          });
+        }
+      } else {
+        message.warning('Thanh toán đã được ghi nhận.');
+        if (user?.id) {
+          bookingApi.getByUser(user.id).then(bRes => {
+            const bks = Array.isArray(bRes.data) ? bRes.data : [];
+            setBookings(bks);
+            reloadInvoices(bks);
+          });
+        }
+      }
+    }).catch(err => {
+      console.error('[MoMo Confirm Error]', err?.response?.data || err);
+      message.error('Không thể xác nhận thanh toán MoMo. Vui lòng liên hệ quầy lễ tân.');
+    });
+  }, [location.search]);
+
+
   // Helper để reload sau thanh toán
   const reloadInvoices = async (userBookings) => {
     const iRes = await axiosClient.get('/Invoices').catch(() => ({ data: [] }));
@@ -85,25 +154,49 @@ export default function PaymentPage() {
   const handlePay = async () => {
     if (!selectedInvoice) return;
     setPaying(true);
+
+    // ── MoMo Flow ──────────────────────────────────────────────────
+    if (payMethod === 'momo') {
+      try {
+        const res = await axiosClient.post('/momo/create-payment', {
+          invoiceId: selectedInvoice.id,
+          amount:    Math.round(selectedInvoice.finalTotal),
+          orderInfo: `Thanh toan hoa don #${selectedInvoice.id} - ${selectedInvoice.bookingCode}`,
+        });
+        const { payUrl } = res.data;
+        if (!payUrl) { message.error('Không lấy được link MoMo!'); setPaying(false); return; }
+        setPayModal(false);
+        setSelectedInvoice(null);
+        // Mở tab MoMo (sandbox)
+        window.open(payUrl, '_blank');
+        message.info('Đã mở trang thanh toán MoMo. Vui lòng hoàn tất thanh toán rồi quay lại!', 6);
+      } catch (err) {
+        const msg = err?.response?.data?.message || 'Kết nối MoMo thất bại!';
+        message.error(msg);
+      } finally {
+        setPaying(false);
+      }
+      return;
+    }
+
+    // ── Cash / Bank / Card Flow ────────────────────────────────────
     try {
+      const methodMap = { cash: 'Cash', bank: 'Transfer', card: 'Card' };
       await axiosClient.post('/Payments', {
-        invoiceId: selectedInvoice.id,
-        amount: selectedInvoice.finalTotal,
-        method: payMethod,
-        paidAt: new Date().toISOString(),
-        status: 'Paid',
+        invoiceId:     selectedInvoice.id,
+        amountPaid:    selectedInvoice.finalTotal,
+        paymentMethod: methodMap[payMethod] || 'Cash',
+        paymentDate:   new Date().toISOString(),
       });
       message.success('Thanh toán thành công! Cảm ơn quý khách.');
       setPayModal(false);
       setSelectedInvoice(null);
-      // Reload đúng invoice của user, không load hết
       await reloadInvoices(bookings);
     } catch {
       message.error('Thanh toán thất bại. Vui lòng thử lại!');
     } finally {
       setPaying(false);
     }
-
   };
 
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('vi-VN') : '—';
@@ -373,14 +466,74 @@ export default function PaymentPage() {
               </div>
             )}
 
+            {payMethod === 'momo' && (
+              <div style={{ background: MOMO_LIGHT, border: `1px solid ${MOMO_PINK}`, borderRadius: 12, padding: '16px', marginBottom: 20, textAlign: 'center' }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>🟣</div>
+                <div style={{ fontWeight: 700, color: MOMO_PINK, fontSize: 15, marginBottom: 4 }}>Thanh toán qua Ví MoMo</div>
+                <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.7 }}>
+                  Nhấn <strong style={{ color: MOMO_PINK }}>"Xác Nhận"</strong> để mở trang MoMo.<br />
+                  Quét QR hoặc xác nhận trên app MoMo (sandbox).<br />
+                  Hệ thống sẽ tự động cập nhật sau khi thanh toán xong.
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setPayModal(false)} style={{ flex: 1, background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: 10, padding: '13px', color: '#374151', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
                 Hủy
               </button>
-              <button onClick={handlePay} disabled={paying} style={{ flex: 2, background: `linear-gradient(135deg, ${GOLD}, #E8C96B)`, border: 'none', borderRadius: 10, padding: '13px', color: DARK, fontWeight: 700, fontSize: 15, cursor: paying ? 'not-allowed' : 'pointer', boxShadow: '0 4px 14px rgba(201,168,76,0.35)' }}>
-                {paying ? 'Đang xử lý...' : '✓ Xác Nhận Thanh Toán'}
+              <button onClick={handlePay} disabled={paying} style={{
+                flex: 2, border: 'none', borderRadius: 10, padding: '13px',
+                fontWeight: 700, fontSize: 15, cursor: paying ? 'not-allowed' : 'pointer',
+                background: payMethod === 'momo'
+                  ? `linear-gradient(135deg, ${MOMO_PINK}, #e91e8c)`
+                  : `linear-gradient(135deg, ${GOLD}, #E8C96B)`,
+                color: payMethod === 'momo' ? '#fff' : DARK,
+                boxShadow: payMethod === 'momo'
+                  ? '0 4px 14px rgba(174,32,112,0.4)'
+                  : '0 4px 14px rgba(201,168,76,0.35)',
+              }}>
+                {paying ? 'Đang xử lý...' : payMethod === 'momo' ? '🟣 Thanh Toán MoMo' : '✓ Xác Nhận Thanh Toán'}
               </button>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ===== MOMO SUCCESS MODAL ===== */}
+      <Modal
+        open={momoSuccessModal}
+        onCancel={() => setMomoSuccessModal(false)}
+        footer={null}
+        width={420}
+        centered
+        styles={{ content: { borderRadius: 20, padding: '40px 32px', textAlign: 'center' } }}
+      >
+        {momoResult && (
+          <div>
+            <div style={{ fontSize: 64, marginBottom: 12 }}>🎉</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: MOMO_PINK, marginBottom: 8 }}>Thanh Toán Thành Công!</div>
+            <div style={{ fontSize: 15, color: '#374151', marginBottom: 20 }}>Hóa đơn của bạn đã được thanh toán qua Ví MoMo.</div>
+            <div style={{ background: MOMO_LIGHT, borderRadius: 12, padding: '16px 20px', marginBottom: 24, textAlign: 'left' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ color: '#6b7280', fontSize: 14 }}>Số hóa đơn</span>
+                <span style={{ fontWeight: 700, color: DARK }}>#{momoResult.invoiceId}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ color: '#6b7280', fontSize: 14 }}>Số tiền</span>
+                <span style={{ fontWeight: 700, color: MOMO_PINK }}>{Number(momoResult.amount || 0).toLocaleString('vi-VN')} ₫</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#6b7280', fontSize: 14 }}>Mã giao dịch</span>
+                <span style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 13 }}>{momoResult.transId || '—'}</span>
+              </div>
+            </div>
+            <button onClick={() => setMomoSuccessModal(false)} style={{
+              width: '100%', padding: '13px', borderRadius: 12, border: 'none',
+              background: `linear-gradient(135deg, ${MOMO_PINK}, #e91e8c)`,
+              color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(174,32,112,0.4)',
+            }}>Đóng</button>
           </div>
         )}
       </Modal>

@@ -1,287 +1,568 @@
-import React, { useState, useEffect } from 'react';
-import { Row, Col, Card, Typography, Statistic, Table, Tag, Space, Progress, Avatar, Spin } from 'antd';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import {
-  BankOutlined,
-  CalendarOutlined,
-  TeamOutlined,
-  DollarOutlined,
-  ArrowUpOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  ToolOutlined,
-  UserOutlined,
-} from '@ant-design/icons';
-import { roomApi } from '../../../api/roomApi';
-import { bookingApi } from '../../../api/bookingApi';
-import { userApi } from '../../../api/userApi';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Row, Col, Card, Typography, Tag, Space, Spin, Alert, Button, Tooltip, Badge, Progress } from 'antd';
+import { DollarOutlined, CalendarOutlined, HomeOutlined, ReloadOutlined, WarningOutlined, CheckCircleOutlined, ShoppingOutlined, TeamOutlined } from '@ant-design/icons';
+import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer, Legend } from 'recharts';
+import { dashboardApi } from '../../../api/dashboardApi';
 import usePermission from '../../../hooks/usePermission';
 
 const { Title, Text } = Typography;
 
-const COLORS = {
-  blue: '#1677ff', green: '#52c41a', orange: '#fa8c16', red: '#ff4d4f', purple: '#722ed1',
+// ── Maps vai trò → tên hiển thị + màu + icon ───────────────────
+const ROLE_CONFIG = {
+  admin:        { label: 'Quản trị viên', color: '#722ed1', bg: 'linear-gradient(135deg,#1a0533 0%,#722ed1 100%)', icon: '🛡️' },
+  manager:      { label: 'Quản lý',       color: '#1677ff', bg: 'linear-gradient(135deg,#001529 0%,#1677ff 100%)', icon: '📊' },
+  receptionist: { label: 'Lễ tân',        color: '#13c2c2', bg: 'linear-gradient(135deg,#002329 0%,#13c2c2 100%)', icon: '🛎️' },
+  accountant:   { label: 'Kế toán',       color: '#52c41a', bg: 'linear-gradient(135deg,#092b00 0%,#52c41a 100%)', icon: '💰' },
+  housekeeping: { label: 'Buồng phòng',   color: '#fa8c16', bg: 'linear-gradient(135deg,#2b1200 0%,#fa8c16 100%)', icon: '🧹' },
+  warehousestaff:{ label: 'Kho vật tư',  color: '#eb2f96', bg: 'linear-gradient(135deg,#29000d 0%,#eb2f96 100%)', icon: '📦' },
+  guest:        { label: 'Khách hàng',    color: '#fa541c', bg: 'linear-gradient(135deg,#2b0e00 0%,#fa541c 100%)', icon: '🏨' },
 };
 
-const KpiCard = ({ title, value, suffix, icon, color, loading }) => (
-  <Card style={{ borderRadius: '16px', border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }} bodyStyle={{ padding: '24px' }}>
+// ── KPI Card ────────────────────────────────────────────────────
+const KpiCard = ({ title, value, unit, icon, color }) => (
+  <Card style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-      <div style={{ flex: 1 }}>
-        <Text type="secondary" style={{ fontSize: '13px', fontWeight: 500, display: 'block', marginBottom: '8px' }}>{title}</Text>
-        {loading ? <Spin size="small" /> : (
-          <Statistic value={value} suffix={suffix} valueStyle={{ fontSize: '28px', fontWeight: 700, color: '#111827' }} />
-        )}
+      <div>
+        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>{title}</Text>
+        <div style={{ fontSize: 28, fontWeight: 700, color: '#111827' }}>
+          {typeof value === 'number' ? value.toLocaleString('vi-VN') : (value ?? '—')}
+          {unit && <Text type="secondary" style={{ fontSize: 14, marginLeft: 4 }}>{unit}</Text>}
+        </div>
       </div>
-      <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', color, flexShrink: 0 }}>
+      <div style={{ width: 48, height: 48, borderRadius: 12, background: `${color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color }}>
         {icon}
       </div>
     </div>
   </Card>
 );
 
-const DashboardPage = () => {
-  const { isManager, isAdmin, isAccountant } = usePermission();
-  const canSeeRevenue = isManager || isAdmin || isAccountant;
-  
-  const [rooms, setRooms] = useState([]);
-  const [bookings, setBookings] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
+// ── Stat Row (dùng trong các section) ──────────────────────────
+const StatRow = ({ label, value, color = '#1677ff', unit = '' }) => (
+  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: `${color}0d`, borderRadius: 10, marginBottom: 8 }}>
+    <Text style={{ fontWeight: 500 }}>{label}</Text>
+    <Tag style={{ background: `${color}20`, color, border: `1px solid ${color}40`, borderRadius: 6, fontWeight: 700, fontSize: 13 }}>
+      {typeof value === 'number' ? value.toLocaleString('vi-VN') : (value ?? '—')}{unit && ` ${unit}`}
+    </Tag>
+  </div>
+);
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true);
-      try {
-        const [roomsRes, bookingsRes, usersRes] = await Promise.allSettled([
-          roomApi.getAllRooms(),
-          bookingApi.getAllBookings(),
-          userApi.getAllUsers(),
-        ]);
-        const mockRooms = [
-          { id: 1, status: 'Available' }, { id: 2, status: 'Occupied' }, { id: 3, status: 'Occupied' },
-          { id: 4, status: 'Cleaning' }, { id: 5, status: 'Maintenance' }, { id: 6, status: 'Available' },
-          { id: 7, status: 'Occupied' }, { id: 8, status: 'Available' }, { id: 9, status: 'Occupied' },
-          { id: 10, status: 'Available' }, { id: 11, status: 'Cleaning' }, { id: 12, status: 'Occupied' },
-        ];
-        const mockBookings = [
-          { id: 1, bookingCode: 'BK-001', guestName: 'Nguyễn Văn An', status: 'Checked_in', totalAmount: 4070000 },
-          { id: 2, bookingCode: 'BK-002', guestName: 'Trần Thị Bích', status: 'Confirmed', totalAmount: 14080000 },
-          { id: 3, bookingCode: 'BK-003', guestName: 'Lê Văn Cường', status: 'Completed', totalAmount: 2310000 },
-          { id: 4, bookingCode: 'BK-004', guestName: 'Phạm Thị Dung', status: 'Cancelled', totalAmount: 0 },
-          { id: 5, bookingCode: 'BK-005', guestName: 'Hoàng Minh', status: 'Pending', totalAmount: 3200000 },
-        ];
-        const mockUsers = Array.from({ length: 8 }, (_, i) => ({ id: i + 1 }));
-        if (roomsRes.status === 'fulfilled') {
-          const d = roomsRes.value.data?.data || roomsRes.value.data || [];
-          setRooms(Array.isArray(d) && d.length > 0 ? d : mockRooms);
-        } else { setRooms(mockRooms); }
-        if (bookingsRes.status === 'fulfilled') {
-          const d = bookingsRes.value.data?.data || bookingsRes.value.data || [];
-          setBookings(Array.isArray(d) && d.length > 0 ? d : mockBookings);
-        } else { setBookings(mockBookings); }
-        if (usersRes.status === 'fulfilled') {
-          const d = usersRes.value.data?.data || usersRes.value.data || [];
-          setUsers(Array.isArray(d) && d.length > 0 ? d : mockUsers);
-        } else { setUsers(mockUsers); }
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchAll();
-  }, []);
+// ── AlertList ───────────────────────────────────────────────────
+const AlertList = ({ alerts }) => {
+  if (!alerts?.length) return <Alert message="Không có cảnh báo nào." type="success" showIcon />;
+  return alerts.map((a, i) => (
+    <Alert key={i} message={a.message} type={a.level === 'warning' ? 'warning' : 'info'} showIcon style={{ marginBottom: 8, borderRadius: 10 }} />
+  ));
+};
 
-  // Tính toán KPI từ dữ liệu thật
-  const totalRooms = rooms.length;
-  const availableRooms = rooms.filter(r => r.status === 'Available').length;
-  const occupiedRooms = rooms.filter(r => r.status === 'Occupied').length;
-  const cleaningRooms = rooms.filter(r => r.status === 'Cleaning').length;
-  const maintenanceRooms = rooms.filter(r => r.status === 'Maintenance').length;
-  const occupancyRate = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0;
+// ═══════════════════════════════════════════════════════════════
+// ── Dashboard theo từng vai trò ────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 
-  const confirmedBookings = bookings.filter(b => b.status === 'Confirmed').length;
-  const checkedInBookings = bookings.filter(b => b.status === 'Checked_in').length;
-  const totalActiveBookings = confirmedBookings + checkedInBookings;
+// Sinh dữ liệu biểu đồ tuần từ tổng tháng
+const makeWeekly = (total, weeks=4) => {
+  const base = Math.round((total||0)/weeks);
+  return ['T1','T2','T3','T4'].map((w,i)=>({w, v: Math.max(0, base + Math.round((i%2===0?1:-1)*base*0.15))}));
+};
+const PIE_COLORS = ['#52c41a','#1677ff','#fa8c16','#ff4d4f','#722ed1'];
 
-  const roomStatusData = [
-    { label: 'Sẵn sàng', count: availableRooms, color: COLORS.green, percent: totalRooms > 0 ? Math.round((availableRooms/totalRooms)*100) : 0 },
-    { label: 'Có khách', count: occupiedRooms, color: COLORS.blue, percent: totalRooms > 0 ? Math.round((occupiedRooms/totalRooms)*100) : 0 },
-    { label: 'Đang dọn', count: cleaningRooms, color: COLORS.orange, percent: totalRooms > 0 ? Math.round((cleaningRooms/totalRooms)*100) : 0 },
-    { label: 'Bảo trì', count: maintenanceRooms, color: COLORS.red, percent: totalRooms > 0 ? Math.round((maintenanceRooms/totalRooms)*100) : 0 },
+const AdminDashboard = ({ data }) => {
+  const bk = data?.summary?.booking || {};
+  const rv = data?.summary?.revenue || {};
+  const rm = data?.summary?.rooms || {};
+  const sys = data?.summary?.system || {};
+  const cust = data?.summary?.customer || {};
+  const alerts = data?.alerts || [];
+  const roomPie = [
+    {name:'Trống', value: rm.availableRooms||0},
+    {name:'Có khách', value: rm.occupiedRooms||0},
+    {name:'Đang dọn', value: rm.cleaningRooms||0},
+    {name:'Bảo trì', value: rm.maintenanceRooms||0},
+  ].filter(x=>x.value>0);
+  const bookingBar = [
+    {name:'Hoàn thành', v: bk.completedBookings||0},
+    {name:'Chờ XN', v: bk.pendingBookings||0},
+    {name:'Đã hủy', v: bk.cancelledBookings||0},
+    {name:'Check-in', v: bk.checkIns||0},
   ];
+  const revenueWeekly = makeWeekly(rv.roomRevenue);
+  const fmt = n => n ? n.toLocaleString('vi-VN')+'đ' : '0đ';
+  return (
+    <>
+      <Row gutter={[16,16]} style={{marginBottom:20}}>
+        <Col xs={12} md={6}><KpiCard title="Tổng Booking" value={bk.totalBookings} unit="đơn" icon={<CalendarOutlined/>} color="#1677ff"/></Col>
+        <Col xs={12} md={6}><KpiCard title="Đã Thu" value={rv.totalRevenue} unit="đ" icon={<DollarOutlined/>} color="#52c41a"/></Col>
+        <Col xs={12} md={6}><KpiCard title="Tổng Phòng" value={rm.totalRooms} unit="phòng" icon={<HomeOutlined/>} color="#722ed1"/></Col>
+        <Col xs={12} md={6}><KpiCard title="Nhân Sự" value={sys.totalUsers} unit="người" icon={<TeamOutlined/>} color="#fa8c16"/></Col>
+      </Row>
+      <Row gutter={[16,16]} style={{marginBottom:20}}>
+        <Col xs={24} md={15}>
+          <Card title="📈 Xu hướng doanh thu phòng (ước tính theo tuần)" style={{borderRadius:16,border:'none',boxShadow:'0 4px 16px rgba(0,0,0,0.06)'}}>
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={revenueWeekly}>
+                <defs>
+                  <linearGradient id="adminGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#722ed1" stopOpacity={0.35}/>
+                    <stop offset="95%" stopColor="#722ed1" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0"/>
+                <XAxis dataKey="w" tick={{fontSize:12}}/>
+                <YAxis tick={{fontSize:11}} tickFormatter={v=>v>=1000000?(v/1000000).toFixed(1)+'tr':v}/>
+                <RTooltip formatter={v=>[v.toLocaleString('vi-VN')+'đ','Doanh thu']}/>
+                <Area type="monotone" dataKey="v" stroke="#722ed1" strokeWidth={2.5} fill="url(#adminGrad)"/>
+              </AreaChart>
+            </ResponsiveContainer>
+          </Card>
+        </Col>
+        <Col xs={24} md={9}>
+          <Card title="🏨 Tình trạng phòng" style={{borderRadius:16,border:'none',boxShadow:'0 4px 16px rgba(0,0,0,0.06)'}}>
+            <ResponsiveContainer width="100%" height={180}>
+              <PieChart>
+                <Pie data={roomPie} cx="50%" cy="50%" innerRadius={50} outerRadius={75} dataKey="value">
+                  {roomPie.map((_,i)=><Cell key={i} fill={PIE_COLORS[i]}/>)}
+                </Pie>
+                <RTooltip/>
+              </PieChart>
+            </ResponsiveContainer>
+            <div style={{textAlign:'center',marginTop:-8}}>
+              <b style={{fontSize:22,color:'#722ed1'}}>{rm.occupancyRate}%</b>
+              <span style={{color:'#888',fontSize:12,marginLeft:6}}>lấp đầy</span>
+            </div>
+          </Card>
+        </Col>
+      </Row>
+      <Row gutter={[16,16]} style={{marginBottom:20}}>
+        <Col xs={24} md={12}>
+          <Card title="📊 Phân tích booking" style={{borderRadius:16,border:'none',boxShadow:'0 4px 16px rgba(0,0,0,0.06)'}}>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={bookingBar}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0"/>
+                <XAxis dataKey="name" tick={{fontSize:11}}/>
+                <YAxis tick={{fontSize:11}} allowDecimals={false}/>
+                <RTooltip/>
+                <Bar dataKey="v" name="Số lượng" fill="#1677ff" radius={[6,6,0,0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card title="💰 Doanh thu chi tiết" style={{borderRadius:16,border:'none',boxShadow:'0 4px 16px rgba(0,0,0,0.06)'}}>
+            <StatRow label="Đã thu thực tế" value={rv.totalRevenue} unit="đ" color="#52c41a"/>
+            <StatRow label="Trên HĐ – Phòng" value={rv.roomRevenue} unit="đ" color="#1677ff"/>
+            <StatRow label="Trên HĐ – Dịch vụ" value={rv.serviceRevenue} unit="đ" color="#13c2c2"/>
+            <StatRow label="Công nợ chưa thu" value={rv.pendingPaymentAmount} unit="đ" color="#ff4d4f"/>
+            <StatRow label="HĐ đã thanh toán" value={rv.paidInvoices} unit="hóa đơn" color="#52c41a"/>
+            <StatRow label="HĐ chưa thanh toán" value={rv.unpaidInvoices} unit="hóa đơn" color="#fa8c16"/>
+          </Card>
+        </Col>
+      </Row>
+      <Row gutter={[16,16]}>
+        <Col xs={24} md={12}>
+          <Card title="👥 Người dùng & Khách hàng" style={{borderRadius:16,border:'none',boxShadow:'0 4px 16px rgba(0,0,0,0.06)'}}>
+            <StatRow label="Tổng người dùng" value={sys.totalUsers} color="#722ed1"/>
+            <StatRow label="Đang hoạt động" value={sys.activeUsers} color="#52c41a"/>
+            <StatRow label="Khách hàng mới" value={cust.newCustomers} color="#1677ff"/>
+            <StatRow label="Thông báo chưa đọc" value={sys.unreadNotifications} color="#fa8c16"/>
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card title="⚠️ Cảnh báo hệ thống" style={{borderRadius:16,border:'none',boxShadow:'0 4px 16px rgba(0,0,0,0.06)'}}>
+            <AlertList alerts={alerts}/>
+          </Card>
+        </Col>
+      </Row>
+    </>
+  );
+};
 
-  const getStatusTag = (status) => {
-    const map = {
-      Confirmed: { color: 'blue', text: 'Đã xác nhận' },
-      Checked_in: { color: 'orange', text: 'Đang lưu trú' },
-      Completed: { color: 'green', text: 'Hoàn thành' },
-      Cancelled: { color: 'red', text: 'Đã hủy' },
-      Pending: { color: 'default', text: 'Chờ xác nhận' },
-    };
-    const s = map[status] || { color: 'default', text: status };
-    return <Tag color={s.color}>{s.text}</Tag>;
+
+const ManagerDashboard = ({ data }) => {
+  const bk = data?.summary?.booking || {};
+  const rv = data?.summary?.revenue || {};
+  const rm = data?.summary?.rooms || {};
+  const wh = data?.summary?.warehouse || {};
+  const sys = data?.summary?.system || {};
+  const bkBar = [
+    {name:'Hoàn thành', v: bk.completedBookings||0},
+    {name:'Chờ XN', v: bk.pendingBookings||0},
+    {name:'Đã hủy', v: bk.cancelledBookings||0},
+  ];
+  const roomPie2 = [
+    {name:'Trống', value: rm.availableRooms||0},
+    {name:'Có khách', value: rm.occupiedRooms||0},
+    {name:'Đang dọn', value: rm.cleaningRooms||0},
+    {name:'Bảo trì', value: rm.maintenanceRooms||0},
+  ].filter(x=>x.value>0);
+  const rvWeekly = makeWeekly(rv.roomRevenue);
+  return (
+    <>
+      <Row gutter={[16,16]} style={{marginBottom:20}}>
+        <Col xs={12} md={6}><KpiCard title="Tổng Booking" value={bk.totalBookings} unit="đơn" icon={<CalendarOutlined/>} color="#1677ff"/></Col>
+        <Col xs={12} md={6}><KpiCard title="Đã Thu" value={rv.totalRevenue} unit="đ" icon={<DollarOutlined/>} color="#52c41a"/></Col>
+        <Col xs={12} md={6}><KpiCard title="Lấp Đầy" value={rm.occupancyRate} unit="%" icon={<HomeOutlined/>} color="#13c2c2"/></Col>
+        <Col xs={12} md={6}><KpiCard title="Vật Tư Thiếu" value={wh.lowStockItems} unit="loại" icon={<ShoppingOutlined/>} color="#ff4d4f"/></Col>
+      </Row>
+      <Row gutter={[16,16]} style={{marginBottom:20}}>
+        <Col xs={24} md={15}>
+          <Card title="📈 Xu hướng doanh thu" style={{borderRadius:16,border:'none',boxShadow:'0 4px 16px rgba(0,0,0,0.06)'}}>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={rvWeekly}>
+                <defs><linearGradient id="mgrG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#1677ff" stopOpacity={0.35}/><stop offset="95%" stopColor="#1677ff" stopOpacity={0}/></linearGradient></defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0"/>
+                <XAxis dataKey="w" tick={{fontSize:12}}/><YAxis tick={{fontSize:11}} tickFormatter={v=>v>=1000000?(v/1000000).toFixed(1)+'tr':v}/>
+                <RTooltip formatter={v=>[v.toLocaleString('vi-VN')+'đ','Doanh thu']}/>
+                <Area type="monotone" dataKey="v" stroke="#1677ff" strokeWidth={2.5} fill="url(#mgrG)"/>
+              </AreaChart>
+            </ResponsiveContainer>
+          </Card>
+        </Col>
+        <Col xs={24} md={9}>
+          <Card title="🏨 Phòng" style={{borderRadius:16,border:'none',boxShadow:'0 4px 16px rgba(0,0,0,0.06)'}}>
+            <ResponsiveContainer width="100%" height={160}>
+              <PieChart><Pie data={roomPie2} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value">{roomPie2.map((_,i)=><Cell key={i} fill={PIE_COLORS[i]}/>)}</Pie><RTooltip/></PieChart>
+            </ResponsiveContainer>
+            <div style={{textAlign:'center',marginTop:-8}}><b style={{fontSize:20,color:'#1677ff'}}>{rm.occupancyRate}%</b> <span style={{color:'#888',fontSize:12}}>lấp đầy</span></div>
+          </Card>
+        </Col>
+      </Row>
+      <Row gutter={[16,16]}>
+        <Col xs={24} md={12}>
+          <Card title="📊 Phân tích booking" style={{borderRadius:16,border:'none',boxShadow:'0 4px 16px rgba(0,0,0,0.06)'}}>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={bkBar}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" tick={{fontSize:11}}/><YAxis tick={{fontSize:11}} allowDecimals={false}/><RTooltip/><Bar dataKey="v" name="Số lượng" fill="#1677ff" radius={[6,6,0,0]}/></BarChart>
+            </ResponsiveContainer>
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card title="💰 Doanh thu & Nhân sự" style={{borderRadius:16,border:'none',boxShadow:'0 4px 16px rgba(0,0,0,0.06)'}}>
+            <StatRow label="Đã thu thực tế" value={rv.totalRevenue} unit="đ" color="#52c41a"/>
+            <StatRow label="Trên HĐ phòng" value={rv.roomRevenue} unit="đ" color="#1677ff"/>
+            <StatRow label="Công nợ chưa thu" value={rv.pendingPaymentAmount} unit="đ" color="#ff4d4f"/>
+            <StatRow label="Tổng nhân sự" value={sys.totalUsers} color="#722ed1"/>
+            <StatRow label="Vật tư dưới ngưỡng" value={wh.lowStockItems} color="#ff4d4f"/>
+          </Card>
+        </Col>
+      </Row>
+    </>
+  );
+};
+
+const ReceptionDashboard = ({ data }) => {
+  const bk = data?.summary?.booking || {};
+  const rm = data?.summary?.rooms || {};
+  const kpis = data?.widgets?.kpiCards || [];
+  return (
+    <>
+      <Row gutter={[16,16]} style={{ marginBottom: 20 }}>
+        {kpis.map(k => (
+          <Col xs={24} sm={8} key={k.code}>
+            <KpiCard title={k.title} value={k.value} unit={k.unit} icon={<CalendarOutlined />} color="#13c2c2" />
+          </Col>
+        ))}
+      </Row>
+      <Row gutter={[16,16]}>
+        <Col xs={24} md={12}>
+          <Card title="📋 Trạng thái booking" style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}>
+            <StatRow label="Check-in trong kỳ" value={bk.checkIns} color="#52c41a" />
+            <StatRow label="Check-out trong kỳ" value={bk.checkOuts} color="#fa8c16" />
+            <StatRow label="Tổng booking" value={bk.totalBookings} color="#1677ff" />
+            <StatRow label="Chờ xác nhận" value={bk.pendingBookings} color="#ff4d4f" />
+            <StatRow label="Đã hoàn thành" value={bk.completedBookings} color="#52c41a" />
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card title="🏨 Tình trạng phòng" style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}>
+            <StatRow label="Phòng trống" value={rm.availableRooms} color="#52c41a" />
+            <StatRow label="Có khách" value={rm.occupiedRooms} color="#1677ff" />
+            <StatRow label="Đang dọn" value={rm.cleaningRooms} color="#fa8c16" />
+            <StatRow label="Bảo trì" value={rm.maintenanceRooms} color="#ff4d4f" />
+            <StatRow label="Tỷ lệ lấp đầy" value={rm.occupancyRate} unit="%" color="#13c2c2" />
+          </Card>
+        </Col>
+      </Row>
+    </>
+  );
+};
+
+const AccountantDashboard = ({ data }) => {
+  const s = data?.summary || {};
+  const rv = s.revenue || {};
+  const kpis = data?.widgets?.kpiCards || [];
+  const alerts = data?.alerts || [];
+  return (
+    <>
+      <Row gutter={[16,16]} style={{ marginBottom: 20 }}>
+        {kpis.map(k => (
+          <Col xs={24} sm={8} key={k.code}>
+            <KpiCard
+              title={k.code === 'totalRevenue' ? 'Đã thu (Payments)' : k.title}
+              value={k.value}
+              unit={k.unit === 'VND' ? 'đ' : k.unit}
+              icon={<DollarOutlined />}
+              color="#52c41a"
+            />
+          </Col>
+        ))}
+      </Row>
+      <Row gutter={[16,16]}>
+        <Col xs={24} md={12}>
+          <Card title="💰 Chi tiết doanh thu" style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}>
+            <StatRow label="Đã thu thực tế (Payments)" value={rv.totalRevenue} unit="đ" color="#52c41a" />
+            <StatRow label="Trên HĐ – Tiền phòng" value={rv.roomRevenue} unit="đ" color="#1677ff" />
+            <StatRow label="Trên HĐ – Dịch vụ" value={rv.serviceRevenue} unit="đ" color="#13c2c2" />
+            <StatRow label="Tổng trên HĐ" value={(rv.roomRevenue || 0) + (rv.serviceRevenue || 0)} unit="đ" color="#722ed1" />
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card title="🧾 Hóa đơn & Công nợ" style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}>
+            <StatRow label="Hóa đơn đã thanh toán" value={rv.paidInvoices} unit="hóa đơn" color="#52c41a" />
+            <StatRow label="Hóa đơn chưa thanh toán" value={rv.unpaidInvoices} unit="hóa đơn" color="#fa8c16" />
+            <StatRow label="Công nợ phải thu" value={rv.pendingPaymentAmount} unit="đ" color="#ff4d4f" />
+          </Card>
+        </Col>
+      </Row>
+      {alerts.length > 0 && (
+        <Card title="⚠️ Cảnh báo" style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)', marginTop: 16 }}>
+          <AlertList alerts={alerts} />
+        </Card>
+      )}
+    </>
+  );
+};
+
+const HousekeepingDashboard = ({ data }) => {
+  const rm = data?.summary?.rooms || {};
+  const wh = data?.summary?.warehouse || {};
+  const kpis = data?.widgets?.kpiCards || [];
+  return (
+    <>
+      <Row gutter={[16,16]} style={{ marginBottom: 20 }}>
+        {kpis.map(k => (
+          <Col xs={24} sm={8} key={k.code}>
+            <KpiCard title={k.title} value={k.value} unit={k.unit} icon={<HomeOutlined />} color="#fa8c16" />
+          </Col>
+        ))}
+      </Row>
+      <Row gutter={[16,16]}>
+        <Col xs={24} md={12}>
+          <Card title="🧹 Tình trạng phòng" style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}>
+            <StatRow label="Phòng cần dọn (Dirty)" value={rm.dirtyRooms} color="#ff4d4f" />
+            <StatRow label="Đang dọn (Cleaning)" value={rm.cleaningRooms} color="#fa8c16" />
+            <StatRow label="Phòng trống (Available)" value={rm.availableRooms} color="#52c41a" />
+            <StatRow label="Đang có khách" value={rm.occupiedRooms} color="#1677ff" />
+            <StatRow label="Bảo trì" value={rm.maintenanceRooms} color="#722ed1" />
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card title="⚠️ Hỏng & Mất trong kỳ" style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}>
+            <StatRow label="Số báo cáo hỏng/mất" value={wh.damageReports} color="#722ed1" />
+            <StatRow label="Số lượng hỏng/mất" value={wh.currentDamagedQuantity} color="#ff4d4f" />
+          </Card>
+        </Col>
+      </Row>
+    </>
+  );
+};
+
+const WarehouseDashboard = ({ data }) => {
+  const s = data?.summary || {};
+  const wh = s.warehouse || {};
+  const kpis = data?.widgets?.kpiCards || [];
+  const alerts = data?.alerts || [];
+  return (
+    <>
+      <Row gutter={[16,16]} style={{ marginBottom: 20 }}>
+        {kpis.map(k => (
+          <Col xs={24} sm={8} key={k.code}>
+            <KpiCard title={k.title} value={k.value} unit={k.unit} icon={<ShoppingOutlined />} color="#eb2f96" />
+          </Col>
+        ))}
+      </Row>
+      <Card title="📦 Chi tiết kho" style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)', marginBottom: 16 }}>
+        <StatRow label="Tổng loại vật tư" value={wh.totalEquipmentTypes} color="#eb2f96" />
+        <StatRow label="Tồn kho" value={wh.inStockQuantity} color="#52c41a" />
+        <StatRow label="Đang sử dụng" value={wh.inUseQuantity} color="#1677ff" />
+        <StatRow label="Đang hỏng" value={wh.currentDamagedQuantity} color="#ff4d4f" />
+        <StatRow label="Báo cáo hỏng/mất" value={wh.damageReports} color="#722ed1" />
+        <StatRow label="Dưới ngưỡng tồn" value={wh.lowStockItems} color="#ff4d4f" />
+      </Card>
+      {alerts.length > 0 && <AlertList alerts={alerts} />}
+    </>
+  );
+};
+
+const GuestDashboard = ({ data }) => {
+  const bk = data?.summary?.booking || {};
+  const cust = data?.summary?.customer || {};
+  const rm = data?.summary?.rooms || {};
+  return (
+    <Row gutter={[16,16]}>
+      <Col xs={24} md={12}>
+        <Card title="🏨 Tình trạng đặt phòng" style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}>
+          <StatRow label="Tổng đặt phòng (tháng này)" value={bk.totalBookings} color="#1677ff" />
+          <StatRow label="Đã check-in" value={bk.checkIns} color="#52c41a" />
+          <StatRow label="Đã check-out" value={bk.checkOuts} color="#fa8c16" />
+          <StatRow label="Đã hoàn thành" value={bk.completedBookings} color="#13c2c2" />
+          <StatRow label="Phòng còn trống" value={rm.availableRooms} color="#52c41a" />
+        </Card>
+      </Col>
+      <Col xs={24} md={12}>
+        <Card title="⭐ Đánh giá khách hàng" style={{ borderRadius: 16, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}>
+          <StatRow label="Đánh giá trong kỳ" value={cust.newReviews} color="#fa8c16" />
+          <StatRow label="Điểm trung bình" value={cust.averageRating} color="#faad14" />
+        </Card>
+      </Col>
+    </Row>
+  );
+};
+
+// ── Chọn dashboard theo role ────────────────────────────────────
+const RoleDashboardContent = ({ role, data }) => {
+  const r = role?.toLowerCase();
+  if (!data) return null;
+  if (r === 'admin')         return <AdminDashboard data={data} />;
+  if (r === 'manager')       return <ManagerDashboard data={data} />;
+  if (r === 'receptionist')  return <ReceptionDashboard data={data} />;
+  if (r === 'accountant')    return <AccountantDashboard data={data} />;
+  if (r === 'housekeeping')  return <HousekeepingDashboard data={data} />;
+  if (r === 'warehousestaff') return <WarehouseDashboard data={data} />;
+  if (r === 'guest')         return <GuestDashboard data={data} />;
+  return <AdminDashboard data={data} />;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// ── Main Component ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+const DashboardPage = () => {
+  const { role } = usePermission();
+  const cfg = ROLE_CONFIG[role?.toLowerCase()] || ROLE_CONFIG.guest;
+
+  const [dashData, setDashData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [period, setPeriod] = useState(null);
+  const [rebuilding, setRebuilding] = useState(false);
+
+  // Map role từ hook (lowercase) → tên trong DB
+  const DB_ROLE_MAP = {
+    admin: 'Admin', manager: 'Manager', receptionist: 'Receptionist',
+    accountant: 'Accountant', housekeeping: 'Housekeeping',
+    warehousestaff: 'WarehouseStaff', guest: 'Guest',
   };
 
-  const recentBookings = bookings.slice(0, 5);
-  const bookingColumns = [
-    { title: 'Mã Booking', dataIndex: 'bookingCode', key: 'bookingCode', render: (t) => <Text strong style={{ color: COLORS.blue }}>{t}</Text> },
-    {
-      title: 'Khách Hàng', dataIndex: 'guestName', key: 'guestName',
-      render: (name) => (
-        <Space>
-          <Avatar size="small" src={`https://api.dicebear.com/7.x/notionists/svg?seed=${name}`} />
-          <Text>{name || 'Khách lẻ'}</Text>
-        </Space>
-      ),
-    },
-    { title: 'Trạng thái', dataIndex: 'status', key: 'status', render: getStatusTag },
-  ];
+  const isDataEmpty = useCallback((d) => {
+    if (!d) return true;
+    const bk = d.summary?.booking || {};
+    const rv = d.summary?.revenue || {};
+    const rm = d.summary?.rooms || {};
+    // Coi là rỗng khi cả 4 chỉ số đều = 0/null
+    return !bk.totalBookings && !rv.totalRevenue && !rv.roomRevenue && !rm.totalRooms;
+  }, []);
 
-  // Realistic biểu đồ doanh thu tuần (VNĐ)
-  const chartData = [
-    { name: 'T2', bookings: 4, revenue: 12400000 },
-    { name: 'T3', bookings: 7, revenue: 21800000 },
-    { name: 'T4', bookings: 5, revenue: 18200000 },
-    { name: 'T5', bookings: 11, revenue: 34500000 },
-    { name: 'T6', bookings: 15, revenue: 47800000 },
-    { name: 'T7', bookings: 22, revenue: 68900000 },
-    { name: 'CN', bookings: 18, revenue: 55300000 },
-  ];
-  const weeklyRevenue = chartData.reduce((s, d) => s + d.revenue, 0);
+  const handleRebuildForRole = useCallback(async (dbRole) => {
+    setRebuilding(true);
+    setError(null);
+    try {
+      const r = dbRole || DB_ROLE_MAP[role?.toLowerCase()] || 'Admin';
+      await dashboardApi.rebuildDashboard(r, 'MONTHLY');
+      const res2 = await dashboardApi.getCurrentDashboard(r, 'MONTHLY');
+      const payload2 = res2.data;
+      setDashData(payload2?.dashboard || null);
+      setPeriod({ key: payload2?.periodKey, start: payload2?.periodStart, end: payload2?.periodEnd, status: payload2?.status });
+    } catch {
+      setError('Rebuild thất bại. Kiểm tra lại kết nối backend.');
+    } finally {
+      setRebuilding(false);
+    }
+  }, [role]);
+
+  const fetchDashboard = useCallback(async (autoRebuild = false) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const dbRole = DB_ROLE_MAP[role?.toLowerCase()] || 'Admin';
+      const res = await dashboardApi.getCurrentDashboard(dbRole, 'MONTHLY');
+      const payload = res.data;
+      const dashJson = payload?.dashboard || null;
+      setPeriod({ key: payload?.periodKey, start: payload?.periodStart, end: payload?.periodEnd, status: payload?.status });
+      // Nếu data rỗng → tự động rebuild
+      if (autoRebuild && isDataEmpty(dashJson)) {
+        setLoading(false);
+        await handleRebuildForRole(dbRole);
+        return;
+      }
+      setDashData(dashJson);
+    } catch (err) {
+      const status = err?.response?.status;
+      // 404 = chưa có dashboard record → tự rebuild
+      if (autoRebuild && (status === 404 || !status)) {
+        setLoading(false);
+        await handleRebuildForRole(DB_ROLE_MAP[role?.toLowerCase()] || 'Admin');
+        return;
+      }
+      setError('Không tải được dashboard. Vui lòng nhấn Rebuild.');
+    } finally {
+      setLoading(false);
+    }
+  }, [role, isDataEmpty, handleRebuildForRole]);
+
+
+  const handleRebuild = useCallback(() => handleRebuildForRole(DB_ROLE_MAP[role?.toLowerCase()] || 'Admin'), [role, handleRebuildForRole]);
+
+  useEffect(() => { fetchDashboard(true); }, [fetchDashboard]);
 
   return (
     <div>
       {/* Banner */}
-      <div style={{ background: 'linear-gradient(135deg, #001529 0%, #1677ff 100%)', borderRadius: '20px', padding: '36px 40px', marginBottom: '28px', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 12px 32px rgba(22,119,255,0.2)' }}>
+      <div style={{
+        background: cfg.bg, borderRadius: 20, padding: '32px 40px', marginBottom: 24,
+        color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        boxShadow: `0 12px 32px ${cfg.color}40`,
+      }}>
         <div>
-          <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px', display: 'block', marginBottom: '6px' }}>
+          <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, display: 'block', marginBottom: 4 }}>
             {new Date().toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </Text>
-          <Title level={2} style={{ color: 'white', margin: '0 0 8px 0', fontWeight: 700 }}>Bảng Điều Khiển Tổng Quan 📊</Title>
-          <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: '15px' }}>Dữ liệu thời gian thực từ hệ thống cơ sở dữ liệu.</Text>
+          <Title level={2} style={{ color: 'white', margin: '0 0 6px 0', fontWeight: 700 }}>
+            {cfg.icon} Dashboard — {cfg.label}
+          </Title>
+          <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>
+            {period ? `Kỳ: ${period.key}` : 'Đang tải dữ liệu...'}
+            {period?.status && (
+              <Badge color={period.status === 'OPEN' ? '#52c41a' : '#d9d9d9'} text={<span style={{ color: 'rgba(255,255,255,0.7)', marginLeft: 4 }}>{period.status}</span>} style={{ marginLeft: 12 }} />
+            )}
+          </Text>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '16px 24px', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)' }}>
-            {loading ? <Spin style={{ color: 'white' }} /> : <div style={{ fontSize: '36px', fontWeight: 800 }}>{occupancyRate}%</div>}
-            <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '13px' }}>Tỷ lệ lấp đầy phòng</div>
-          </div>
-        </div>
+        <Space>
+          <Tooltip title="Làm mới dữ liệu">
+            <Button icon={<ReloadOutlined />} onClick={fetchDashboard} loading={loading} style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', color: 'white', borderRadius: 10 }} />
+          </Tooltip>
+          <Tooltip title="Rebuild toàn bộ dashboard">
+            <Button icon={<WarningOutlined />} onClick={handleRebuild} loading={rebuilding} style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'white', borderRadius: 10 }}>
+              Rebuild
+            </Button>
+          </Tooltip>
+        </Space>
       </div>
 
-      {/* KPI Cards - Dữ liệu thật */}
-      <Row gutter={[20, 20]} style={{ marginBottom: '28px' }}>
-        <Col xs={24} sm={12} lg={canSeeRevenue ? 6 : 8}><KpiCard title="Tổng số Phòng" value={totalRooms} icon={<BankOutlined />} color={COLORS.blue} loading={loading} /></Col>
-        <Col xs={24} sm={12} lg={canSeeRevenue ? 6 : 8}><KpiCard title="Booking đang hoạt động" value={totalActiveBookings} icon={<CalendarOutlined />} color={COLORS.green} loading={loading} /></Col>
-        <Col xs={24} sm={12} lg={canSeeRevenue ? 6 : 8}><KpiCard title="Tổng nhân sự" value={users.length} icon={<TeamOutlined />} color={COLORS.purple} loading={loading} /></Col>
-        {canSeeRevenue && (
-          <Col xs={24} sm={12} lg={6}><KpiCard title="Doanh thu tuần (VNĐ)" value={Number(weeklyRevenue).toLocaleString('vi-VN')} icon={<DollarOutlined />} color={COLORS.orange} loading={loading} /></Col>
-        )}
-      </Row>
-
-      {/* Biểu đồ Thống Kê (Thêm phần Wow Effect) */}
-      {canSeeRevenue && (
-        <Row gutter={[20, 20]} style={{ marginBottom: '28px' }}>
-          <Col span={24}>
-            <Card title={<Text strong style={{ fontSize: '15px' }}>📈 Doanh Thu & Booking Trong Tuần</Text>} style={{ borderRadius: '16px', border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }} styles={{ body: { padding: '24px' } }}>
-              <div style={{ width: '100%', height: 300 }}>
-                <ResponsiveContainer>
-                  <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={COLORS.blue} stopOpacity={0.4}/>
-                        <stop offset="95%" stopColor={COLORS.blue} stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorBookings" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={COLORS.purple} stopOpacity={0.4}/>
-                        <stop offset="95%" stopColor={COLORS.purple} stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="name" stroke="#cbd5e1" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis stroke="#cbd5e1" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}`} />
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} />
-                    <Area type="monotone" dataKey="revenue" name="Doanh thu ($)" stroke={COLORS.blue} strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
-                    <Area type="monotone" dataKey="bookings" name="Số lượng Bookings" stroke={COLORS.purple} strokeWidth={3} fillOpacity={1} fill="url(#colorBookings)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
-          </Col>
-        </Row>
+      {/* Content */}
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 80 }}>
+          <Spin size="large" tip="Đang tải dashboard..." />
+        </div>
+      ) : error ? (
+        <Alert message={error} type="error" showIcon action={<Button size="small" onClick={fetchDashboard}>Thử lại</Button>} style={{ borderRadius: 12, marginBottom: 20 }} />
+      ) : !dashData ? (
+        <Alert
+          message="Chưa có dữ liệu dashboard"
+          description="Nhấn 'Rebuild' để tạo dữ liệu dashboard cho kỳ hiện tại."
+          type="info" showIcon
+          action={<Button onClick={handleRebuild} loading={rebuilding} type="primary">Rebuild ngay</Button>}
+          style={{ borderRadius: 12 }}
+        />
+      ) : (
+        <RoleDashboardContent role={role} data={dashData} />
       )}
-
-      {/* Row 2 */}
-      <Row gutter={[20, 20]} style={{ marginBottom: '28px' }}>
-        <Col xs={24} lg={8}>
-          <Card title={<Text strong style={{ fontSize: '15px' }}>🏨 Tình Trạng Phòng</Text>} style={{ borderRadius: '16px', border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)', height: '100%' }} bodyStyle={{ padding: '20px' }}>
-            {loading ? <Spin /> : (
-              <Space direction="vertical" style={{ width: '100%' }} size="large">
-                {roomStatusData.map((item) => (
-                  <div key={item.label}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <Space><div style={{ width: '10px', height: '10px', borderRadius: '50%', background: item.color }} /><Text style={{ fontWeight: 500 }}>{item.label}</Text></Space>
-                      <Text strong style={{ color: item.color }}>{item.count} phòng</Text>
-                    </div>
-                    <Progress percent={item.percent} showInfo={false} strokeColor={item.color} trailColor="#f3f4f6" strokeWidth={8} />
-                  </div>
-                ))}
-              </Space>
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={16}>
-          <Card title={<Text strong style={{ fontSize: '15px' }}>📋 Đặt Phòng Gần Đây</Text>} style={{ borderRadius: '16px', border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }} bodyStyle={{ padding: 0 }}>
-            <Table columns={bookingColumns} dataSource={recentBookings} rowKey="id" pagination={false} loading={loading} size="small" locale={{ emptyText: 'Chưa có booking nào trong hệ thống' }} />
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Row 3 - Tổng quan trạng thái */}
-      <Row gutter={[20, 20]}>
-        <Col xs={24} md={12}>
-          <Card title={<Text strong style={{ fontSize: '15px' }}>📊 Tổng Quan Booking</Text>} style={{ borderRadius: '16px', border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }} bodyStyle={{ padding: '20px' }}>
-            {loading ? <Spin /> : (
-              <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                {[
-                  { label: 'Chờ xác nhận', count: bookings.filter(b=>b.status==='Pending').length, color: '#d9d9d9', bg: '#fafafa' },
-                  { label: 'Đã xác nhận', count: confirmedBookings, color: COLORS.blue, bg: '#e6f4ff' },
-                  { label: 'Đang lưu trú', count: checkedInBookings, color: COLORS.orange, bg: '#fff7e6' },
-                  { label: 'Hoàn thành', count: bookings.filter(b=>b.status==='Completed').length, color: COLORS.green, bg: '#f6ffed' },
-                  { label: 'Đã hủy', count: bookings.filter(b=>b.status==='Cancelled').length, color: COLORS.red, bg: '#fff2f0' },
-                ].map(item => (
-                  <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: item.bg, borderRadius: '10px' }}>
-                    <Text style={{ fontWeight: 500 }}>{item.label}</Text>
-                    <Tag style={{ background: `${item.color}20`, color: item.color, border: `1px solid ${item.color}40`, borderRadius: '6px', padding: '2px 10px', fontWeight: 700, fontSize: '14px' }}>{item.count}</Tag>
-                  </div>
-                ))}
-              </Space>
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} md={12}>
-          <Card title={<Text strong style={{ fontSize: '15px' }}>⚡ Hoạt Động Cần Chú Ý</Text>} style={{ borderRadius: '16px', border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }} bodyStyle={{ padding: '20px' }}>
-            {loading ? <Spin /> : (
-              <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: '#f6ffed', borderRadius: '10px' }}>
-                  <CheckCircleOutlined style={{ color: COLORS.green, fontSize: '18px' }} />
-                  <Text>{availableRooms} phòng đang sẵn sàng đón khách</Text>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: '#fff7e6', borderRadius: '10px' }}>
-                  <ClockCircleOutlined style={{ color: COLORS.orange, fontSize: '18px' }} />
-                  <Text>{cleaningRooms} phòng đang trong quá trình dọn dẹp</Text>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: '#fff2f0', borderRadius: '10px' }}>
-                  <ToolOutlined style={{ color: COLORS.red, fontSize: '18px' }} />
-                  <Text>{maintenanceRooms} phòng đang được bảo trì</Text>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: '#e6f4ff', borderRadius: '10px' }}>
-                  <UserOutlined style={{ color: COLORS.blue, fontSize: '18px' }} />
-                  <Text>{users.length} nhân sự trong hệ thống</Text>
-                </div>
-              </Space>
-            )}
-          </Card>
-        </Col>
-      </Row>
     </div>
   );
 };
